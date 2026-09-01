@@ -2,7 +2,7 @@
 """
 OpenCode Session Manager
 管理 opencode 会话的 GUI 工具
-功能：查看、删除、压缩、存档
+功能：查看、删除、压缩、存档、归档管理
 """
 
 import os
@@ -10,7 +10,6 @@ import sys
 import json
 import shutil
 import sqlite3
-import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -28,7 +27,7 @@ TRANSLATIONS = {
         "vacuum": "压缩数据库",
         "archive": "存档选中",
         "import_archive": "导入存档",
-        "launch_tui": "终端版",
+        "archive_manager": "归档管理",
         "lang_switch": "English",
         "status_ready": "就绪",
         "db_info_title": "数据库信息",
@@ -102,7 +101,7 @@ TRANSLATIONS = {
         "vacuum": "Vacuum DB",
         "archive": "Archive",
         "import_archive": "Import",
-        "launch_tui": "TUI",
+        "archive_manager": "Archive Manager",
         "lang_switch": "中文",
         "status_ready": "Ready",
         "db_info_title": "Database Info",
@@ -169,6 +168,177 @@ TRANSLATIONS = {
         "time_month": "30 Days",
     }
 }
+
+
+class ArchiveManagerWindow:
+    """归档管理器窗口"""
+
+    def __init__(self, parent, archive_db_path: Path, lang: str = "zh"):
+        self.archive_db_path = archive_db_path
+        self.lang = lang
+        self._ = TRANSLATIONS[lang]
+        self.conn = None
+
+        # 创建新窗口
+        self.window = tk.Toplevel(parent)
+        self.window.title(self._t("archive_manager"))
+        self.window.geometry("800x500")
+        self.window.minsize(600, 400)
+
+        self._setup_ui()
+        self._load_data()
+
+    def _t(self, key: str, *args) -> str:
+        """翻译函数"""
+        text = self._.get(key, key)
+        if args:
+            text = text.format(*args)
+        return text
+
+    def _setup_ui(self):
+        """设置 UI"""
+        main_frame = ttk.Frame(self.window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 信息
+        info_frame = ttk.LabelFrame(main_frame, text=self._t("db_info_title"), padding="5")
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.info_var = tk.StringVar(value=f"{self._t('db_info_empty')}")
+        ttk.Label(info_frame, textvariable=self.info_var).pack(anchor=tk.W)
+
+        # 会话列表
+        list_frame = ttk.LabelFrame(main_frame, text="归档会话", padding="5")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.tree = ttk.Treeview(list_frame, show="tree", selectmode="extended")
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 按钮
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Button(btn_frame, text="刷新", command=self._load_data).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="全选", command=self._select_all).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected).pack(side=tk.RIGHT)
+
+    def _load_data(self):
+        """加载数据"""
+        try:
+            if self.conn:
+                self.conn.close()
+
+            self.conn = sqlite3.connect(str(self.archive_db_path))
+            self.conn.row_factory = sqlite3.Row
+
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM document")
+            total = cursor.fetchone()[0]
+
+            self.info_var.set(f"路径: {self.archive_db_path} | 记录: {total}")
+            self._load_tree()
+
+        except Exception as e:
+            messagebox.showerror("错误", f"加载归档数据库失败:\n{str(e)}")
+
+    def _load_tree(self):
+        """加载会话树"""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        if not self.conn:
+            return
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT key, value FROM document ORDER BY key")
+        rows = cursor.fetchall()
+
+        drafts = []
+        workspaces = {}
+
+        for row in rows:
+            key = row["key"]
+            value = row["value"]
+
+            if ":draft:" in key:
+                drafts.append((key, value))
+            elif ":session:" in key:
+                parts = key.split(":")
+                if len(parts) >= 2:
+                    ws_name = parts[0]
+                    if ws_name not in workspaces:
+                        workspaces[ws_name] = []
+                    workspaces[ws_name].append((key, value))
+
+        # 添加草稿
+        if drafts:
+            draft_node = self.tree.insert("", tk.END, text=f"📝 草稿 ({len(drafts)})", open=True)
+            for key, value in drafts:
+                preview = self._extract_preview(value)
+                self.tree.insert(draft_node, tk.END, text=preview, values=(key,))
+
+        # 添加工作区
+        for ws_name, sessions in sorted(workspaces.items()):
+            ws_node = self.tree.insert("", tk.END, text=f"📁 {ws_name} ({len(sessions)})", open=False)
+            for key, value in sessions:
+                preview = self._extract_preview(value)
+                self.tree.insert(ws_node, tk.END, text=preview, values=(key,))
+
+    def _extract_preview(self, value: str) -> str:
+        """提取预览"""
+        try:
+            data = json.loads(value)
+            if "prompt" in data:
+                prompt_parts = data["prompt"]
+                if isinstance(prompt_parts, list):
+                    for part in prompt_parts:
+                        if isinstance(part, dict) and "content" in part:
+                            content = part["content"]
+                            if content:
+                                return content[:50] + ("..." if len(content) > 50 else "")
+            return "(空)"
+        except:
+            return "(无法解析)"
+
+    def _select_all(self):
+        """全选"""
+        for item in self.tree.get_children():
+            self.tree.selection_add(item)
+            for child in self.tree.get_children(item):
+                self.tree.selection_add(child)
+
+    def _delete_selected(self):
+        """删除选中"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("警告", "请先选择要删除的记录")
+            return
+
+        keys_to_delete = []
+        for item in selected:
+            values = self.tree.item(item, "values")
+            if values:
+                keys_to_delete.append(values[0])
+
+        if not keys_to_delete:
+            return
+
+        count = len(keys_to_delete)
+        if not messagebox.askyesno("确认删除", f"确定要删除 {count} 条记录吗？\n\n此操作不可撤销！"):
+            return
+
+        try:
+            cursor = self.conn.cursor()
+            placeholders = ",".join(["?"] * len(keys_to_delete))
+            cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", keys_to_delete)
+            self.conn.commit()
+            self._load_data()
+        except Exception as e:
+            messagebox.showerror("错误", f"删除失败:\n{str(e)}")
 
 
 class OpenCodeSessionManager:
@@ -270,9 +440,9 @@ class OpenCodeSessionManager:
         self.widgets["btn_lang"] = ttk.Button(toolbar, text=self._t("lang_switch"), command=self._switch_language)
         self.widgets["btn_lang"].pack(side=tk.LEFT, padx=(10, 0))
 
-        # 启动 TUI 按钮
-        self.widgets["btn_tui"] = ttk.Button(toolbar, text=self._t("launch_tui"), command=self._launch_tui)
-        self.widgets["btn_tui"].pack(side=tk.LEFT, padx=(5, 0))
+        # 归档管理按钮
+        self.widgets["btn_archive_manager"] = ttk.Button(toolbar, text=self._t("archive_manager"), command=self._open_archive_manager)
+        self.widgets["btn_archive_manager"].pack(side=tk.LEFT, padx=(5, 0))
 
         # 筛选下拉框
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
@@ -370,25 +540,25 @@ class OpenCodeSessionManager:
         self._ = TRANSLATIONS[self.lang]
         self._update_ui_text()
 
-    def _launch_tui(self):
-        """启动 TUI 版本"""
-        tui_path = Path(__file__).parent / "tui.py"
-        if not tui_path.exists():
-            messagebox.showerror("Error", "tui.py not found")
+    def _open_archive_manager(self):
+        """打开归档管理器"""
+        # 查找 drafts.sqlite
+        archive_db = None
+        possible_paths = [
+            Path(os.environ.get("APPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
+        ]
+        for path in possible_paths:
+            if path.exists():
+                archive_db = path
+                break
+
+        if not archive_db:
+            messagebox.showwarning(self._t("db_not_found_title"), "未找到归档数据库 (drafts.sqlite)")
             return
 
-        # 启动新终端窗口
-        try:
-            if sys.platform == "win32":
-                # 使用 cmd /start 打开新终端窗口
-                subprocess.Popen(
-                    f'start cmd /k python "{tui_path}"',
-                    shell=True
-                )
-            else:
-                subprocess.Popen(["python3", str(tui_path)])
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to launch TUI:\n{str(e)}")
+        # 打开归档管理窗口
+        ArchiveManagerWindow(self.root, archive_db, self.lang)
 
     def _update_ui_text(self):
         """更新所有 UI 文本"""
@@ -402,7 +572,7 @@ class OpenCodeSessionManager:
         self.widgets["btn_archive"].configure(text=self._t("archive"))
         self.widgets["btn_import"].configure(text=self._t("import_archive"))
         self.widgets["btn_lang"].configure(text=self._t("lang_switch"))
-        self.widgets["btn_tui"].configure(text=self._t("launch_tui"))
+        self.widgets["btn_archive_manager"].configure(text=self._t("archive_manager"))
 
         # 标签框
         self.widgets["info_frame"].configure(text=self._t("db_info_title"))
