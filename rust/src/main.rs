@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, FontData, FontDefinitions, FontFamily, Color32, Style, Visuals, Stroke, Rounding, Vec2};
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use chrono::{Local, TimeZone};
@@ -15,9 +15,58 @@ fn main() -> eframe::Result<()> {
         "OpenCode Session Manager",
         options,
         Box::new(|cc| {
+            setup_style(&cc.egui_ctx);
+            setup_fonts(&cc.egui_ctx);
             Ok(Box::new(App::new(cc)))
         }),
     )
+}
+
+fn setup_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    
+    // 设置圆角
+    style.visuals.window_rounding = Rounding::same(8.0);
+    style.visuals.widgets.noninteractive.rounding = Rounding::same(4.0);
+    style.visuals.widgets.inactive.rounding = Rounding::same(4.0);
+    style.visuals.widgets.hovered.rounding = Rounding::same(4.0);
+    style.visuals.widgets.active.rounding = Rounding::same(4.0);
+    
+    // 设置间距
+    style.spacing.item_spacing = Vec2::new(8.0, 6.0);
+    style.spacing.window_margin = egui::Margin::same(12.0);
+    
+    ctx.set_style(style);
+}
+
+fn setup_fonts(ctx: &egui::Context) {
+    let mut fonts = FontDefinitions::default();
+    
+    // 加载 Windows 系统中文字体
+    let font_paths = [
+        "C:\\Windows\\Fonts\\msyh.ttc",    // 微软雅黑
+        "C:\\Windows\\Fonts\\simhei.ttf",  // 黑体
+        "C:\\Windows\\Fonts\\simsun.ttc",  // 宋体
+    ];
+    
+    for font_path in &font_paths {
+        if let Ok(font_data) = std::fs::read(font_path) {
+            fonts.font_data.insert(
+                "chinese".to_owned(),
+                FontData::from_owned(font_data),
+            );
+            // 将中文字体添加到默认字体族
+            if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
+                family.push("chinese".to_owned());
+            }
+            if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
+                family.push("chinese".to_owned());
+            }
+            break;
+        }
+    }
+    
+    ctx.set_fonts(fonts);
 }
 
 #[derive(Clone, Debug)]
@@ -58,7 +107,6 @@ struct App {
     time_filter: String,
     status_message: String,
     show_delete_confirm: bool,
-    delete_target: String,
 }
 
 impl App {
@@ -79,7 +127,6 @@ impl App {
             time_filter: "all".to_string(),
             status_message: "就绪".to_string(),
             show_delete_confirm: false,
-            delete_target: String::new(),
         };
 
         app.load_sessions();
@@ -91,72 +138,62 @@ impl App {
         match self.lang.as_str() {
             "zh" => match key {
                 "window_title" => "OpenCode 会话管理器".to_string(),
-                "sessions" => "会话".to_string(),
-                "archive" => "归档管理".to_string(),
-                "refresh" => "刷新".to_string(),
-                "select_db" => "选择数据库".to_string(),
-                "vacuum" => "压缩".to_string(),
-                "export" => "导出".to_string(),
-                "import" => "导入".to_string(),
-                "delete" => "删除".to_string(),
+                "sessions" => "📋 会话".to_string(),
+                "archive" => "🗂️ 归档".to_string(),
+                "refresh" => "🔄 刷新".to_string(),
+                "select_db" => "📂 选择数据库".to_string(),
+                "vacuum" => "📦 压缩".to_string(),
+                "export" => "💾 导出".to_string(),
+                "import" => "📥 导入".to_string(),
+                "delete" => "🗑️ 删除".to_string(),
                 "select_all" => "全选".to_string(),
                 "deselect_all" => "取消全选".to_string(),
                 "lang_switch" => "EN".to_string(),
-                "filter_placeholder" => "筛选...".to_string(),
-                "time_all" => "全部".to_string(),
+                "filter_placeholder" => "🔍 筛选...".to_string(),
+                "time_all" => "全部时间".to_string(),
                 "time_today" => "今天".to_string(),
-                "time_week" => "7天".to_string(),
-                "time_month" => "30天".to_string(),
+                "time_week" => "最近7天".to_string(),
+                "time_month" => "最近30天".to_string(),
                 "confirm_delete" => "确认删除".to_string(),
                 "confirm_delete_msg" => "确定要删除选中的记录吗？\n此操作不可撤销！".to_string(),
-                "yes" => "是".to_string(),
-                "no" => "否".to_string(),
+                "yes" => "✓ 是".to_string(),
+                "no" => "✗ 否".to_string(),
                 "no_sessions" => "没有找到会话".to_string(),
                 "no_archive" => "没有找到归档记录".to_string(),
                 "total" => "总计".to_string(),
-                "active" => "活跃".to_string(),
-                "archived" => "已归档".to_string(),
+                "sessions_count" => "个会话".to_string(),
+                "records_count" => "条记录".to_string(),
                 _ => key.to_string(),
             },
             _ => match key {
                 "window_title" => "OpenCode Session Manager".to_string(),
-                "sessions" => "Sessions".to_string(),
-                "archive" => "Archive".to_string(),
-                "refresh" => "Refresh".to_string(),
-                "select_db" => "Select DB".to_string(),
-                "vacuum" => "Vacuum".to_string(),
-                "export" => "Export".to_string(),
-                "import" => "Import".to_string(),
-                "delete" => "Delete".to_string(),
+                "sessions" => "📋 Sessions".to_string(),
+                "archive" => "🗂️ Archive".to_string(),
+                "refresh" => "🔄 Refresh".to_string(),
+                "select_db" => "📂 Select DB".to_string(),
+                "vacuum" => "📦 Vacuum".to_string(),
+                "export" => "💾 Export".to_string(),
+                "import" => "📥 Import".to_string(),
+                "delete" => "🗑️ Delete".to_string(),
                 "select_all" => "Select All".to_string(),
                 "deselect_all" => "Deselect All".to_string(),
                 "lang_switch" => "中文".to_string(),
-                "filter_placeholder" => "Filter...".to_string(),
-                "time_all" => "All".to_string(),
+                "filter_placeholder" => "🔍 Filter...".to_string(),
+                "time_all" => "All Time".to_string(),
                 "time_today" => "Today".to_string(),
                 "time_week" => "7 Days".to_string(),
                 "time_month" => "30 Days".to_string(),
                 "confirm_delete" => "Confirm Delete".to_string(),
                 "confirm_delete_msg" => "Delete selected records?\nThis cannot be undone!".to_string(),
-                "yes" => "Yes".to_string(),
-                "no" => "No".to_string(),
+                "yes" => "✓ Yes".to_string(),
+                "no" => "✗ No".to_string(),
                 "no_sessions" => "No sessions found".to_string(),
                 "no_archive" => "No archive records found".to_string(),
                 "total" => "Total".to_string(),
-                "active" => "Active".to_string(),
-                "archived" => "Archived".to_string(),
+                "sessions_count" => "sessions".to_string(),
+                "records_count" => "records".to_string(),
                 _ => key.to_string(),
             },
-        }
-    }
-
-    fn find_opencode_db(&self) -> Option<PathBuf> {
-        let home = dirs::home_dir()?;
-        let db_path = home.join(".local").join("share").join("opencode").join("opencode.db");
-        if db_path.exists() {
-            Some(db_path)
-        } else {
-            None
         }
     }
 
@@ -208,7 +245,7 @@ impl App {
             }
         }
 
-        self.status_message = format!("{}: {} 条记录", self.t("total"), self.sessions.len());
+        self.status_message = format!("{} {} 条", self.t("total"), self.sessions.len());
     }
 
     fn load_archive(&mut self) {
@@ -221,18 +258,12 @@ impl App {
 
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
-            Err(e) => {
-                self.status_message = format!("归档数据库打开失败: {}", e);
-                return;
-            }
+            Err(_) => return,
         };
 
         let mut stmt = match conn.prepare("SELECT key, value FROM document ORDER BY key") {
             Ok(s) => s,
-            Err(e) => {
-                self.status_message = format!("查询失败: {}", e);
-                return;
-            }
+            Err(_) => return,
         };
 
         let rows = stmt.query_map([], |row| {
@@ -261,10 +292,7 @@ impl App {
 
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
-            Err(e) => {
-                self.status_message = format!("数据库打开失败: {}", e);
-                return;
-            }
+            Err(_) => return,
         };
 
         let selected_ids: Vec<String> = self.selected_sessions.iter()
@@ -291,10 +319,7 @@ impl App {
 
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
-            Err(e) => {
-                self.status_message = format!("数据库打开失败: {}", e);
-                return;
-            }
+            Err(_) => return,
         };
 
         let selected_keys: Vec<String> = self.selected_archive.iter()
@@ -323,12 +348,11 @@ impl App {
                 for part in prompt {
                     if let Some(content) = part.get("content").and_then(|c| c.as_str()) {
                         if !content.is_empty() {
-                            let preview = if content.len() > 50 {
-                                format!("{}...", &content[..50])
+                            return if content.len() > 40 {
+                                format!("{}...", &content[..40])
                             } else {
                                 content.to_string()
                             };
-                            return preview;
                         }
                     }
                 }
@@ -336,56 +360,102 @@ impl App {
         }
         "(空)".to_string()
     }
+
+    fn vacuum_database(&mut self) {
+        if let Some(db_path) = &self.db_path {
+            if let Ok(conn) = Connection::open(db_path) {
+                if conn.execute("VACUUM", params![]).is_ok() {
+                    self.status_message = "压缩完成 ✓".to_string();
+                }
+            }
+        }
+    }
+
+    fn select_all(&mut self) {
+        match self.current_tab {
+            Tab::Sessions => {
+                self.selected_sessions = (0..self.sessions.len()).collect();
+            }
+            Tab::Archive => {
+                self.selected_archive = (0..self.archive_records.len()).collect();
+            }
+        }
+    }
+
+    fn deselect_all(&mut self) {
+        match self.current_tab {
+            Tab::Sessions => self.selected_sessions.clear(),
+            Tab::Archive => self.selected_archive.clear(),
+        }
+    }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 顶部面板
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                // Language switch
-                if ui.button(self.t("lang_switch")).clicked() {
+                // 语言切换
+                let lang_btn = egui::Button::new(
+                    egui::RichText::new(self.t("lang_switch")).strong()
+                ).min_size(Vec2::new(40.0, 28.0));
+                if ui.add(lang_btn).clicked() {
                     self.lang = if self.lang == "zh" { "en".to_string() } else { "zh".to_string() };
                 }
 
+                ui.add_space(8.0);
                 ui.separator();
+                ui.add_space(8.0);
 
-                // Tabs
-                if ui.selectable_label(self.current_tab == Tab::Sessions, self.t("sessions")).clicked() {
+                // 标签页
+                let sessions_style = if self.current_tab == Tab::Sessions {
+                    egui::RichText::new(self.t("sessions")).strong().color(Color32::from_rgb(0, 120, 215))
+                } else {
+                    egui::RichText::new(self.t("sessions"))
+                };
+                let archive_style = if self.current_tab == Tab::Archive {
+                    egui::RichText::new(self.t("archive")).strong().color(Color32::from_rgb(0, 120, 215))
+                } else {
+                    egui::RichText::new(self.t("archive"))
+                };
+
+                if ui.add(egui::Button::new(sessions_style).frame(false)).clicked() {
                     self.current_tab = Tab::Sessions;
                 }
-                if ui.selectable_label(self.current_tab == Tab::Archive, self.t("archive")).clicked() {
+                if ui.add(egui::Button::new(archive_style).frame(false)).clicked() {
                     self.current_tab = Tab::Archive;
                 }
 
+                ui.add_space(8.0);
                 ui.separator();
+                ui.add_space(8.0);
 
-                // Action buttons
+                // 操作按钮
                 if ui.button(self.t("refresh")).clicked() {
                     self.load_sessions();
                     self.load_archive();
-                }
-
-                if ui.button(self.t("select_db")).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("SQLite", &["sqlite"])
-                        .pick_file() 
-                    {
-                        self.db_path = Some(path);
-                        self.load_sessions();
-                    }
                 }
 
                 if ui.button(self.t("vacuum")).clicked() {
                     self.vacuum_database();
                 }
 
+                // 右侧状态
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(&self.status_message);
+                    ui.label(
+                        egui::RichText::new(&self.status_message)
+                            .color(Color32::GRAY)
+                            .small()
+                    );
                 });
             });
+            ui.add_space(4.0);
         });
 
+        // 底部面板
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 if ui.button(self.t("select_all")).clicked() {
                     self.select_all();
@@ -393,23 +463,36 @@ impl eframe::App for App {
                 if ui.button(self.t("deselect_all")).clicked() {
                     self.deselect_all();
                 }
-                if ui.button(self.t("delete")).clicked() {
-                    self.show_delete_confirm = true;
-                }
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let delete_btn = egui::Button::new(
+                        egui::RichText::new(self.t("delete")).color(Color32::from_rgb(200, 50, 50))
+                    );
+                    if ui.add(delete_btn).clicked() && 
+                       ((!self.selected_sessions.is_empty() && self.current_tab == Tab::Sessions) ||
+                        (!self.selected_archive.is_empty() && self.current_tab == Tab::Archive)) {
+                        self.show_delete_confirm = true;
+                    }
+                });
             });
+            ui.add_space(4.0);
         });
 
+        // 中央面板
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Pre-compute translated strings
-            let time_all = self.t("time_all");
-            let time_today = self.t("time_today");
-            let time_week = self.t("time_week");
-            let time_month = self.t("time_month");
-
-            // Filter row
+            // 筛选栏
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.filter_text);
+                let filter_text = self.t("filter_placeholder");
+                ui.add(egui::TextEdit::singleline(&mut self.filter_text).hint_text(filter_text));
                 
+                ui.add_space(8.0);
+                
+                let time_all = self.t("time_all");
+                let time_today = self.t("time_today");
+                let time_week = self.t("time_week");
+                let time_month = self.t("time_month");
+
                 let current_time_text = match self.time_filter.as_str() {
                     "all" => &time_all,
                     "today" => &time_today,
@@ -420,6 +503,7 @@ impl eframe::App for App {
 
                 egui::ComboBox::from_id_source("time_filter")
                     .selected_text(current_time_text)
+                    .width(100.0)
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.time_filter, "all".to_string(), &time_all);
                         ui.selectable_value(&mut self.time_filter, "today".to_string(), &time_today);
@@ -427,22 +511,27 @@ impl eframe::App for App {
                         ui.selectable_value(&mut self.time_filter, "month".to_string(), &time_month);
                     });
             });
-
+            ui.add_space(4.0);
             ui.separator();
+            ui.add_space(4.0);
 
+            // 内容区域
             match self.current_tab {
                 Tab::Sessions => self.show_sessions(ui),
                 Tab::Archive => self.show_archive(ui),
             }
         });
 
-        // Delete confirmation dialog
+        // 删除确认对话框
         if self.show_delete_confirm {
             egui::Window::new(self.t("confirm_delete"))
                 .collapsible(false)
                 .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .show(ctx, |ui| {
+                    ui.add_space(8.0);
                     ui.label(self.t("confirm_delete_msg"));
+                    ui.add_space(12.0);
                     ui.horizontal(|ui| {
                         if ui.button(self.t("yes")).clicked() {
                             match self.current_tab {
@@ -466,7 +555,7 @@ impl App {
         let time_threshold = match self.time_filter.as_str() {
             "today" => {
                 let today = Local::now().date_naive();
-                and_time_from_date(today)
+                today.and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap().timestamp() * 1000
             }
             "week" => now - 7 * 24 * 60 * 60 * 1000,
             "month" => now - 30 * 24 * 60 * 60 * 1000,
@@ -476,11 +565,9 @@ impl App {
         let filtered: Vec<(usize, &Session)> = self.sessions.iter()
             .enumerate()
             .filter(|(_, s)| {
-                // Time filter
                 if time_threshold > 0 && s.time_updated < time_threshold {
                     return false;
                 }
-                // Text filter
                 if !self.filter_text.is_empty() {
                     let filter = self.filter_text.to_lowercase();
                     return s.title.to_lowercase().contains(&filter) 
@@ -492,7 +579,11 @@ impl App {
 
         if filtered.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label(self.t("no_sessions"));
+                ui.label(
+                    egui::RichText::new(self.t("no_sessions"))
+                        .color(Color32::GRAY)
+                        .size(16.0)
+                );
             });
             return;
         }
@@ -502,9 +593,50 @@ impl App {
                 let is_selected = self.selected_sessions.contains(&idx);
                 let time_str = Self::format_time(session.time_updated);
                 let title = if session.title.is_empty() { "(untitled)" } else { &session.title };
-                let label = format!("[{}] {} - {}", time_str, title, session.directory);
+                
+                let bg_color = if is_selected {
+                    Color32::from_rgb(0, 120, 215)
+                } else if idx % 2 == 0 {
+                    Color32::from_rgb(245, 245, 245)
+                } else {
+                    Color32::WHITE
+                };
 
-                if ui.selectable_label(is_selected, &label).clicked() {
+                let response = ui.allocate_response(Vec2::new(ui.available_width(), 36.0), egui::Sense::click());
+                
+                // 绘制背景
+                if response.hovered() || is_selected {
+                    let rect = response.rect;
+                    ui.painter().rect_filled(rect, Rounding::same(4.0), bg_color);
+                }
+
+                // 绘制内容
+                let rect = response.rect;
+                let text_color = if is_selected { Color32::WHITE } else { Color32::BLACK };
+                
+                ui.painter().text(
+                    rect.left_center() + Vec2::new(12.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("[{}] {}", time_str, title),
+                    egui::FontId::proportional(14.0),
+                    text_color,
+                );
+
+                // 目录（右侧）
+                let dir_display = if session.directory.len() > 30 {
+                    format!("...{}", &session.directory[session.directory.len()-27..])
+                } else {
+                    session.directory.clone()
+                };
+                ui.painter().text(
+                    rect.right_center() + Vec2::new(-12.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    dir_display,
+                    egui::FontId::proportional(12.0),
+                    if is_selected { Color32::WHITE } else { Color32::GRAY },
+                );
+
+                if response.clicked() {
                     if is_selected {
                         self.selected_sessions.retain(|&x| x != idx);
                     } else {
@@ -529,7 +661,11 @@ impl App {
 
         if filtered.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label(self.t("no_archive"));
+                ui.label(
+                    egui::RichText::new(self.t("no_archive"))
+                        .color(Color32::GRAY)
+                        .size(16.0)
+                );
             });
             return;
         }
@@ -538,9 +674,41 @@ impl App {
             for (idx, record) in filtered {
                 let is_selected = self.selected_archive.contains(&idx);
                 let preview = Self::extract_preview(&record.value);
-                let label = format!("{}: {}", record.key, preview);
+                
+                let bg_color = if is_selected {
+                    Color32::from_rgb(0, 120, 215)
+                } else if idx % 2 == 0 {
+                    Color32::from_rgb(245, 245, 245)
+                } else {
+                    Color32::WHITE
+                };
 
-                if ui.selectable_label(is_selected, &label).clicked() {
+                let response = ui.allocate_response(Vec2::new(ui.available_width(), 36.0), egui::Sense::click());
+                
+                if response.hovered() || is_selected {
+                    let rect = response.rect;
+                    ui.painter().rect_filled(rect, Rounding::same(4.0), bg_color);
+                }
+
+                let rect = response.rect;
+                let text_color = if is_selected { Color32::WHITE } else { Color32::BLACK };
+                
+                // 简化 key 显示
+                let display_key = if record.key.len() > 50 {
+                    format!("{}...", &record.key[..47])
+                } else {
+                    record.key.clone()
+                };
+                
+                ui.painter().text(
+                    rect.left_center() + Vec2::new(12.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{}: {}", display_key, preview),
+                    egui::FontId::proportional(13.0),
+                    text_color,
+                );
+
+                if response.clicked() {
                     if is_selected {
                         self.selected_archive.retain(|&x| x != idx);
                     } else {
@@ -549,37 +717,6 @@ impl App {
                 }
             }
         });
-    }
-
-    fn select_all(&mut self) {
-        match self.current_tab {
-            Tab::Sessions => {
-                self.selected_sessions = (0..self.sessions.len()).collect();
-            }
-            Tab::Archive => {
-                self.selected_archive = (0..self.archive_records.len()).collect();
-            }
-        }
-    }
-
-    fn deselect_all(&mut self) {
-        match self.current_tab {
-            Tab::Sessions => self.selected_sessions.clear(),
-            Tab::Archive => self.selected_archive.clear(),
-        }
-    }
-
-    fn vacuum_database(&mut self) {
-        let db_path = match &self.db_path {
-            Some(p) => p.clone(),
-            None => return,
-        };
-
-        if let Ok(conn) = Connection::open(&db_path) {
-            if conn.execute("VACUUM", params![]).is_ok() {
-                self.status_message = "压缩完成".to_string();
-            }
-        }
     }
 }
 
@@ -601,9 +738,4 @@ fn find_archive_db() -> Option<PathBuf> {
     } else {
         None
     }
-}
-
-fn and_time_from_date(date: chrono::NaiveDate) -> i64 {
-    let datetime = date.and_hms_opt(0, 0, 0).unwrap();
-    datetime.and_local_timezone(Local).unwrap().timestamp() * 1000
 }
