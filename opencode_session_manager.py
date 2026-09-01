@@ -415,6 +415,12 @@ class OpenCodeSessionManager:
         toolbar = ttk.Frame(main_frame)
         toolbar.pack(fill=tk.X, pady=(0, 10))
 
+        # 语言切换按钮（第一位）
+        self.widgets["btn_lang"] = ttk.Button(toolbar, text=self._t("lang_switch"), command=self._switch_language)
+        self.widgets["btn_lang"].pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+
         # 左侧按钮
         self.widgets["btn_refresh"] = ttk.Button(toolbar, text=self._t("refresh"), command=self._load_data)
         self.widgets["btn_refresh"].pack(side=tk.LEFT, padx=(0, 5))
@@ -423,9 +429,6 @@ class OpenCodeSessionManager:
         self.widgets["btn_select_db"].pack(side=tk.LEFT, padx=(0, 5))
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-
-        self.widgets["btn_delete_empty"] = ttk.Button(toolbar, text=self._t("delete_empty"), command=self._delete_empty_sessions)
-        self.widgets["btn_delete_empty"].pack(side=tk.LEFT, padx=(0, 5))
 
         self.widgets["btn_vacuum"] = ttk.Button(toolbar, text=self._t("vacuum"), command=self._vacuum_database)
         self.widgets["btn_vacuum"].pack(side=tk.LEFT, padx=(0, 5))
@@ -436,13 +439,9 @@ class OpenCodeSessionManager:
         self.widgets["btn_import"] = ttk.Button(toolbar, text=self._t("import_archive"), command=self._import_archive)
         self.widgets["btn_import"].pack(side=tk.LEFT)
 
-        # 语言切换按钮
-        self.widgets["btn_lang"] = ttk.Button(toolbar, text=self._t("lang_switch"), command=self._switch_language)
-        self.widgets["btn_lang"].pack(side=tk.LEFT, padx=(10, 0))
-
         # 归档管理按钮
         self.widgets["btn_archive_manager"] = ttk.Button(toolbar, text=self._t("archive_manager"), command=self._open_archive_manager)
-        self.widgets["btn_archive_manager"].pack(side=tk.LEFT, padx=(5, 0))
+        self.widgets["btn_archive_manager"].pack(side=tk.LEFT, padx=(10, 0))
 
         # 筛选下拉框
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
@@ -567,7 +566,6 @@ class OpenCodeSessionManager:
         # 工具栏按钮
         self.widgets["btn_refresh"].configure(text=self._t("refresh"))
         self.widgets["btn_select_db"].configure(text=self._t("select_db"))
-        self.widgets["btn_delete_empty"].configure(text=self._t("delete_empty"))
         self.widgets["btn_vacuum"].configure(text=self._t("vacuum"))
         self.widgets["btn_archive"].configure(text=self._t("archive"))
         self.widgets["btn_import"].configure(text=self._t("import_archive"))
