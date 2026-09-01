@@ -62,6 +62,7 @@ class OpenCodeSessionManager:
         ttk.Button(toolbar, text="刷新", command=self._load_data).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(toolbar, text="选择数据库", command=self._select_database).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+        ttk.Button(toolbar, text="删除空会话", command=self._delete_empty_sessions).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(toolbar, text="压缩数据库", command=self._vacuum_database).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(toolbar, text="存档选中", command=self._archive_selected).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(toolbar, text="导入存档", command=self._import_archive).pack(side=tk.LEFT)
@@ -380,6 +381,67 @@ class OpenCodeSessionManager:
 
         except Exception as e:
             messagebox.showerror("错误", f"删除失败:\n{str(e)}")
+
+    def _delete_empty_sessions(self):
+        """一键删除空会话"""
+        if not self.conn:
+            messagebox.showwarning("警告", "请先加载数据库")
+            return
+
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT key, value FROM document")
+            rows = cursor.fetchall()
+
+            empty_keys = []
+            for row in rows:
+                key = row["key"]
+                value = row["value"]
+
+                # 只处理草稿和会话
+                if ":draft:" not in key and ":session:" not in key:
+                    continue
+
+                # 检查是否为空
+                if self._is_empty_session(value):
+                    empty_keys.append(key)
+
+            if not empty_keys:
+                messagebox.showinfo("信息", "没有找到空会话")
+                return
+
+            # 确认删除
+            count = len(empty_keys)
+            if not messagebox.askyesno("确认删除", f"找到 {count} 个空会话，确定要删除吗？\n\n此操作不可撤销！"):
+                return
+
+            # 删除空会话
+            placeholders = ",".join(["?"] * len(empty_keys))
+            cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", empty_keys)
+            self.conn.commit()
+
+            self.status_var.set(f"已删除 {count} 个空会话")
+            self._load_data()
+
+        except Exception as e:
+            messagebox.showerror("错误", f"删除空会话失败:\n{str(e)}")
+
+    def _is_empty_session(self, value: str) -> bool:
+        """检查会话是否为空"""
+        try:
+            data = json.loads(value)
+            if "prompt" in data:
+                prompt_parts = data["prompt"]
+                if isinstance(prompt_parts, list):
+                    for part in prompt_parts:
+                        if isinstance(part, dict) and "content" in part:
+                            content = part["content"]
+                            if content and content.strip():
+                                return False
+                    return True
+            return True
+        except:
+            return True
 
     def _archive_selected(self):
         """存档选中的会话"""
