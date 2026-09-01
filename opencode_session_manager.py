@@ -10,6 +10,7 @@ import sys
 import json
 import shutil
 import sqlite3
+import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -27,6 +28,7 @@ TRANSLATIONS = {
         "vacuum": "压缩数据库",
         "archive": "存档选中",
         "import_archive": "导入存档",
+        "launch_tui": "终端版",
         "lang_switch": "English",
         "status_ready": "就绪",
         "db_info_title": "数据库信息",
@@ -93,6 +95,7 @@ TRANSLATIONS = {
         "vacuum": "Vacuum DB",
         "archive": "Archive",
         "import_archive": "Import",
+        "launch_tui": "TUI",
         "lang_switch": "中文",
         "status_ready": "Ready",
         "db_info_title": "Database Info",
@@ -233,6 +236,10 @@ class OpenCodeSessionManager:
         self.widgets["btn_lang"] = ttk.Button(toolbar, text=self._t("lang_switch"), command=self._switch_language)
         self.widgets["btn_lang"].pack(side=tk.LEFT, padx=(10, 0))
 
+        # 启动 TUI 按钮
+        self.widgets["btn_tui"] = ttk.Button(toolbar, text=self._t("launch_tui"), command=self._launch_tui)
+        self.widgets["btn_tui"].pack(side=tk.LEFT, padx=(5, 0))
+
         # 状态栏
         self.status_var = tk.StringVar(value=self._t("status_ready"))
         self.widgets["status"] = ttk.Label(toolbar, textvariable=self.status_var)
@@ -302,6 +309,19 @@ class OpenCodeSessionManager:
         self._ = TRANSLATIONS[self.lang]
         self._update_ui_text()
 
+    def _launch_tui(self):
+        """启动 TUI 版本"""
+        tui_path = Path(__file__).parent / "tui.py"
+        if not tui_path.exists():
+            messagebox.showerror("Error", "tui.py not found")
+            return
+
+        # 启动新终端窗口
+        if sys.platform == "win32":
+            subprocess.Popen(["python", str(tui_path)], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:
+            subprocess.Popen(["python3", str(tui_path)])
+
     def _update_ui_text(self):
         """更新所有 UI 文本"""
         self.root.title(self._t("window_title"))
@@ -314,6 +334,7 @@ class OpenCodeSessionManager:
         self.widgets["btn_archive"].configure(text=self._t("archive"))
         self.widgets["btn_import"].configure(text=self._t("import_archive"))
         self.widgets["btn_lang"].configure(text=self._t("lang_switch"))
+        self.widgets["btn_tui"].configure(text=self._t("launch_tui"))
 
         # 标签框
         self.widgets["info_frame"].configure(text=self._t("db_info_title"))
