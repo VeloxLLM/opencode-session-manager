@@ -86,6 +86,10 @@ TRANSLATIONS = {
         "confirm_import_msg": "确定要导入 {} 条记录吗？\n\n重复的键将被覆盖！",
         "imported_records": "已导入 {} 条记录",
         "import_error": "导入失败",
+        "filter_label": "筛选:",
+        "filter_all": "全部",
+        "filter_nonempty": "有内容",
+        "filter_empty": "空会话",
     },
     "en": {
         "window_title": "OpenCode Session Manager",
@@ -153,6 +157,10 @@ TRANSLATIONS = {
         "confirm_import_msg": "Import {} records?\n\nDuplicate keys will be overwritten!",
         "imported_records": "Imported {} records",
         "import_error": "Import failed",
+        "filter_label": "Filter:",
+        "filter_all": "All",
+        "filter_nonempty": "Non-empty",
+        "filter_empty": "Empty",
     }
 }
 
@@ -239,6 +247,20 @@ class OpenCodeSessionManager:
         # 启动 TUI 按钮
         self.widgets["btn_tui"] = ttk.Button(toolbar, text=self._t("launch_tui"), command=self._launch_tui)
         self.widgets["btn_tui"].pack(side=tk.LEFT, padx=(5, 0))
+
+        # 筛选下拉框
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+        ttk.Label(toolbar, text=self._t("filter_label")).pack(side=tk.LEFT, padx=(5, 0))
+        self.filter_var = tk.StringVar(value=self._t("filter_all"))
+        self.widgets["filter"] = ttk.Combobox(
+            toolbar,
+            textvariable=self.filter_var,
+            values=[self._t("filter_all"), self._t("filter_nonempty"), self._t("filter_empty")],
+            state="readonly",
+            width=10
+        )
+        self.widgets["filter"].pack(side=tk.LEFT, padx=(5, 0))
+        self.widgets["filter"].bind("<<ComboboxSelected>>", self._on_filter_change)
 
         # 状态栏
         self.status_var = tk.StringVar(value=self._t("status_ready"))
@@ -353,6 +375,10 @@ class OpenCodeSessionManager:
         self.widgets["btn_deselect_all"].configure(text=self._t("deselect_all"))
         self.widgets["btn_delete_selected"].configure(text=self._t("delete_selected"))
 
+        # 筛选下拉框
+        self.widgets["filter"].configure(values=[self._t("filter_all"), self._t("filter_nonempty"), self._t("filter_empty")])
+        self.filter_var.set(self._t("filter_all"))
+
         # 刷新树
         self._load_tree()
 
@@ -414,6 +440,27 @@ class OpenCodeSessionManager:
             messagebox.showerror(self._t("db_load_error"), f"{self._t('db_load_error')}:\n{str(e)}")
             self.status_var.set(self._t("load_failed"))
 
+    def _on_filter_change(self, event=None):
+        """筛选条件改变"""
+        self._load_tree()
+
+    def _is_empty_session(self, value: str) -> bool:
+        """检查会话是否为空"""
+        try:
+            data = json.loads(value)
+            if "prompt" in data:
+                prompt_parts = data["prompt"]
+                if isinstance(prompt_parts, list):
+                    for part in prompt_parts:
+                        if isinstance(part, dict) and "content" in part:
+                            content = part["content"]
+                            if content and content.strip():
+                                return False
+                    return True
+            return True
+        except:
+            return True
+
     def _load_tree(self):
         """加载会话树"""
         # 清空树
@@ -422,6 +469,9 @@ class OpenCodeSessionManager:
 
         if not self.conn:
             return
+
+        # 获取筛选条件
+        filter_value = self.filter_var.get() if hasattr(self, 'filter_var') else self._t("filter_all")
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT key, value FROM document ORDER BY key")
@@ -435,6 +485,16 @@ class OpenCodeSessionManager:
         for row in rows:
             key = row["key"]
             value = row["value"]
+
+            # 应用筛选
+            if filter_value == self._t("filter_nonempty"):
+                if ":draft:" in key or ":session:" in key:
+                    if self._is_empty_session(value):
+                        continue
+            elif filter_value == self._t("filter_empty"):
+                if ":draft:" in key or ":session:" in key:
+                    if not self._is_empty_session(value):
+                        continue
 
             if ":draft:" in key:
                 drafts.append((key, value))
@@ -653,23 +713,6 @@ class OpenCodeSessionManager:
 
         except Exception as e:
             messagebox.showerror(self._t("delete_empty_error"), f"{self._t('delete_empty_error')}:\n{str(e)}")
-
-    def _is_empty_session(self, value: str) -> bool:
-        """检查会话是否为空"""
-        try:
-            data = json.loads(value)
-            if "prompt" in data:
-                prompt_parts = data["prompt"]
-                if isinstance(prompt_parts, list):
-                    for part in prompt_parts:
-                        if isinstance(part, dict) and "content" in part:
-                            content = part["content"]
-                            if content and content.strip():
-                                return False
-                    return True
-            return True
-        except:
-            return True
 
     def _archive_selected(self):
         """存档选中的会话"""
