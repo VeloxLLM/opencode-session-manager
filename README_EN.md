@@ -22,12 +22,21 @@ OpenCode Session Manager is a desktop tool for managing [opencode](https://githu
 
 | Feature | Description |
 |---------|-------------|
-| 📋 View | Display all sessions and drafts grouped by workspace, with prompt preview |
-| 🗑️ Delete | Batch select and delete unwanted sessions or drafts |
-| 🧹 Clean | One-click delete all empty sessions |
+| 📋 View | Display all sessions grouped by workspace with time filter |
+| 🗑️ Delete | Batch select and delete unwanted sessions |
+| 🧹 Clean | One-click delete all empty/archived sessions |
 | 📦 Compress | VACUUM database to reclaim space from deleted records |
 | 💾 Archive | Export sessions to JSON files for backup, with import support |
+| 🗂️ Archive Manager | Manage desktop opencode archive data |
 | 🌐 Language | Support Chinese/English interface switching |
+| ⏰ Time Filter | Filter sessions by Today/7 Days/30 Days |
+
+## Data Sources
+
+| Database | Location | Description |
+|----------|----------|-------------|
+| `opencode.db` | `~/.local/share/opencode/` | CLI/GUI current sessions (default) |
+| `drafts.sqlite` | `%APPDATA%\ai.opencode.desktop\` | Desktop archive data (Archive Manager) |
 
 ## Requirements
 
@@ -46,17 +55,15 @@ cd opencode-session-manager
 
 ## Usage
 
-### GUI Mode (Graphical Interface)
-
 ```bash
 python opencode_session_manager.py
 ```
 
-### TUI Mode (Terminal Interface)
+### Features
 
-```bash
-python tui.py
-```
+1. **Session Management**: Directly manage opencode CLI/GUI current sessions
+2. **Archive Manager**: Click "Archive Manager" button to manage desktop opencode archive data
+3. **Time Filter**: Use the time dropdown to filter sessions by Today/7 Days/30 Days
 
 Or click the "TUI" button in the GUI to launch.
 
