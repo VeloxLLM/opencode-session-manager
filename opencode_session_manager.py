@@ -317,10 +317,17 @@ class OpenCodeSessionManager:
             return
 
         # 启动新终端窗口
-        if sys.platform == "win32":
-            subprocess.Popen(["python", str(tui_path)], creationflags=subprocess.CREATE_NEW_CONSOLE)
-        else:
-            subprocess.Popen(["python3", str(tui_path)])
+        try:
+            if sys.platform == "win32":
+                # 使用 cmd /start 打开新终端窗口
+                subprocess.Popen(
+                    f'start cmd /k python "{tui_path}"',
+                    shell=True
+                )
+            else:
+                subprocess.Popen(["python3", str(tui_path)])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch TUI:\n{str(e)}")
 
     def _update_ui_text(self):
         """更新所有 UI 文本"""
