@@ -5,6 +5,15 @@
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPL%203.0-green.svg)](LICENSE)
 
+## AI 工作文档
+
+本项目提供 AI 工作交接文档，方便 AI 助手快速了解项目：
+
+| 文件 | 说明 |
+|------|------|
+| [ai.md](ai.md) | 中文版 AI 交接文档 |
+| [ai_EN.md](ai_EN.md) | 英文版 AI 交接文档 |
+
 ## 简介
 
 OpenCode Session Manager 是一个用于管理 [opencode](https://github.com/anomalyco/opencode) 会话数据的桌面工具。支持 GUI（图形界面）和 TUI（终端界面）两种模式，可以帮助你查看、删除、压缩和存档 opencode 的会话记录。

@@ -5,6 +5,15 @@
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPL%203.0-green.svg)](LICENSE)
 
+## AI Documentation
+
+This project provides AI handoff documents for quick onboarding:
+
+| File | Description |
+|------|-------------|
+| [ai.md](ai.md) | AI handoff document (Chinese) |
+| [ai_EN.md](ai_EN.md) | AI handoff document (English) |
+
 ## Introduction
 
 OpenCode Session Manager is a desktop tool for managing [opencode](https://github.com/anomalyco/opencode) session data. It supports both GUI (graphical interface) and TUI (terminal interface) modes, helping you view, delete, compress, and archive your opencode session records.

@@ -90,6 +90,9 @@ TRANSLATIONS = {
         "filter_all": "全部",
         "filter_nonempty": "有内容",
         "filter_empty": "空会话",
+        "time_today": "今天",
+        "time_week": "7天内",
+        "time_month": "30天内",
     },
     "en": {
         "window_title": "OpenCode Session Manager",
@@ -161,6 +164,9 @@ TRANSLATIONS = {
         "filter_all": "All",
         "filter_nonempty": "Non-empty",
         "filter_empty": "Empty",
+        "time_today": "Today",
+        "time_week": "7 Days",
+        "time_month": "30 Days",
     }
 }
 
@@ -197,10 +203,15 @@ class OpenCodeSessionManager:
 
     def _find_database(self) -> Optional[Path]:
         """查找 opencode 数据库文件"""
+        # 优先查找 opencode CLI 数据库（当前会话）
+        cli_db = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+        if cli_db.exists():
+            return cli_db
+
+        # 备选：桌面版数据库（归档）
         possible_paths = [
             Path(os.environ.get("APPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
             Path(os.environ.get("LOCALAPPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
-            Path.home() / "AppData" / "Roaming" / "ai.opencode.desktop" / "drafts.sqlite",
         ]
 
         for path in possible_paths:
@@ -208,6 +219,21 @@ class OpenCodeSessionManager:
                 return path
 
         return None
+
+    def _get_workspace_times(self) -> Dict[str, datetime]:
+        """获取工作区的最后修改时间"""
+        workspace_times = {}
+        if not self.db_path:
+            return workspace_times
+
+        data_dir = self.db_path.parent
+        for dat_file in data_dir.glob("opencode.workspace.*.dat"):
+            # 解码工作区名称
+            ws_name = dat_file.stem  # 去掉 .dat 后缀
+            mtime = datetime.fromtimestamp(dat_file.stat().st_mtime)
+            workspace_times[ws_name] = mtime
+
+        return workspace_times
 
     def _setup_ui(self):
         """设置 UI 界面"""
@@ -261,6 +287,19 @@ class OpenCodeSessionManager:
         )
         self.widgets["filter"].pack(side=tk.LEFT, padx=(5, 0))
         self.widgets["filter"].bind("<<ComboboxSelected>>", self._on_filter_change)
+
+        # 时间筛选下拉框
+        ttk.Label(toolbar, text="时间:").pack(side=tk.LEFT, padx=(10, 0))
+        self.time_filter_var = tk.StringVar(value=self._t("filter_all"))
+        self.widgets["time_filter"] = ttk.Combobox(
+            toolbar,
+            textvariable=self.time_filter_var,
+            values=[self._t("filter_all"), self._t("time_today"), self._t("time_week"), self._t("time_month")],
+            state="readonly",
+            width=8
+        )
+        self.widgets["time_filter"].pack(side=tk.LEFT, padx=(5, 0))
+        self.widgets["time_filter"].bind("<<ComboboxSelected>>", self._on_filter_change)
 
         # 状态栏
         self.status_var = tk.StringVar(value=self._t("status_ready"))
@@ -410,26 +449,49 @@ class OpenCodeSessionManager:
 
             # 获取数据库信息
             cursor = self.conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM document")
-            total_count = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:draft:%'")
-            draft_count = cursor.fetchone()[0]
+            # 检查是新数据库还是旧数据库
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
+            is_new_db = cursor.fetchone() is not None
 
-            cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:session:%'")
-            session_count = cursor.fetchone()[0]
+            if is_new_db:
+                # 新数据库（opencode.db）
+                cursor.execute("SELECT COUNT(*) FROM session")
+                total_count = cursor.fetchone()[0]
 
-            # 数据库文件大小
-            db_size = self.db_path.stat().st_size
-            db_size_str = self._format_size(db_size)
+                cursor.execute("SELECT COUNT(*) FROM session WHERE time_archived IS NULL")
+                active_count = cursor.fetchone()[0]
 
-            self.db_info_var.set(
-                f"{'路径' if self.lang == 'zh' else 'Path'}: {self.db_path}\n"
-                f"{'大小' if self.lang == 'zh' else 'Size'}: {db_size_str}\n"
-                f"{'总记录' if self.lang == 'zh' else 'Total'}: {total_count} | "
-                f"{self._t('drafts')}: {draft_count} | "
-                f"{'会话' if self.lang == 'zh' else 'Sessions'}: {session_count}"
-            )
+                cursor.execute("SELECT COUNT(*) FROM session WHERE time_archived IS NOT NULL")
+                archived_count = cursor.fetchone()[0]
+
+                db_info = (
+                    f"{'路径' if self.lang == 'zh' else 'Path'}: {self.db_path}\n"
+                    f"{'大小' if self.lang == 'zh' else 'Size'}: {self._format_size(self.db_path.stat().st_size)}\n"
+                    f"{'总会话' if self.lang == 'zh' else 'Total'}: {total_count} | "
+                    f"{'活跃' if self.lang == 'zh' else 'Active'}: {active_count} | "
+                    f"{'已归档' if self.lang == 'zh' else 'Archived'}: {archived_count}"
+                )
+            else:
+                # 旧数据库（drafts.sqlite）
+                cursor.execute("SELECT COUNT(*) FROM document")
+                total_count = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:draft:%'")
+                draft_count = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:session:%'")
+                session_count = cursor.fetchone()[0]
+
+                db_info = (
+                    f"{'路径' if self.lang == 'zh' else 'Path'}: {self.db_path}\n"
+                    f"{'大小' if self.lang == 'zh' else 'Size'}: {self._format_size(self.db_path.stat().st_size)}\n"
+                    f"{'总记录' if self.lang == 'zh' else 'Total'}: {total_count} | "
+                    f"{self._t('drafts')}: {draft_count} | "
+                    f"{'会话' if self.lang == 'zh' else 'Sessions'}: {session_count}"
+                )
+
+            self.db_info_var.set(db_info)
 
             # 加载会话树
             self._load_tree()
@@ -472,8 +534,100 @@ class OpenCodeSessionManager:
 
         # 获取筛选条件
         filter_value = self.filter_var.get() if hasattr(self, 'filter_var') else self._t("filter_all")
+        time_filter = self.time_filter_var.get() if hasattr(self, 'time_filter_var') else self._t("filter_all")
+
+        # 计算时间阈值
+        now = datetime.now()
+        time_threshold = None
+        if time_filter == self._t("time_today"):
+            time_threshold = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_filter == self._t("time_week"):
+            time_threshold = now - __import__('datetime').timedelta(days=7)
+        elif time_filter == self._t("time_month"):
+            time_threshold = now - __import__('datetime').timedelta(days=30)
 
         cursor = self.conn.cursor()
+
+        # 检查是新数据库还是旧数据库
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
+        is_new_db = cursor.fetchone() is not None
+
+        if is_new_db:
+            self._load_tree_new_db(cursor, filter_value, time_threshold, now)
+        else:
+            self._load_tree_old_db(cursor, filter_value, time_threshold)
+
+    def _load_tree_new_db(self, cursor, filter_value, time_threshold, now):
+        """加载新数据库的会话树"""
+        # 获取所有会话
+        cursor.execute("""
+            SELECT id, title, directory, 
+                   datetime(time_created/1000, 'unixepoch', 'localtime') as created,
+                   datetime(time_updated/1000, 'unixepoch', 'localtime') as updated,
+                   time_created, time_updated, time_archived,
+                   cost, tokens_input, tokens_output
+            FROM session 
+            ORDER BY time_updated DESC
+        """)
+        sessions = cursor.fetchall()
+
+        # 按项目分组
+        projects = {}
+        for session in sessions:
+            # 应用时间筛选
+            if time_threshold:
+                session_time = datetime.fromtimestamp(session["time_updated"] / 1000)
+                if session_time < time_threshold:
+                    continue
+
+            # 应用归档筛选
+            if filter_value == self._t("filter_empty"):
+                if session["time_archived"] is None:
+                    continue
+            elif filter_value == self._t("filter_nonempty"):
+                if session["time_archived"] is not None:
+                    continue
+
+            project_id = session["directory"] or "unknown"
+            if project_id not in projects:
+                projects[project_id] = []
+            projects[project_id].append(session)
+
+        # 添加会话节点
+        for project_dir, sessions in sorted(projects.items()):
+            # 简化项目目录显示
+            display_name = project_dir.split("\\")[-1] if "\\" in project_dir else project_dir
+            if len(display_name) > 30:
+                display_name = "..." + display_name[-27:]
+
+            # 计算项目时间
+            latest_time = max(s["time_updated"] for s in sessions)
+            time_str = datetime.fromtimestamp(latest_time / 1000).strftime("%m/%d %H:%M")
+
+            ws_node = self.tree.insert("", tk.END, text=f"📁 {display_name} ({len(sessions)}) [{time_str}]", open=False)
+
+            for session in sessions:
+                title = session["title"] or "(untitled)"
+                time_updated = datetime.fromtimestamp(session["time_updated"] / 1000).strftime("%m/%d %H:%M")
+                preview = f"[{time_updated}] {title[:40]}"
+
+                # 存储完整会话信息
+                session_data = json.dumps({
+                    "id": session["id"],
+                    "title": session["title"],
+                    "directory": session["directory"],
+                    "created": session["created"],
+                    "updated": session["updated"],
+                    "cost": session["cost"],
+                    "tokens": session["tokens_input"] + session["tokens_output"]
+                })
+                self.tree.insert(ws_node, tk.END, text=preview, values=(session["id"], session_data))
+
+    def _load_tree_old_db(self, cursor, filter_value, time_threshold):
+        """加载旧数据库的会话树"""
+        # 获取工作区时间
+        workspace_times = self._get_workspace_times()
+
         cursor.execute("SELECT key, value FROM document ORDER BY key")
         rows = cursor.fetchall()
 
@@ -486,7 +640,7 @@ class OpenCodeSessionManager:
             key = row["key"]
             value = row["value"]
 
-            # 应用筛选
+            # 应用内容筛选
             if filter_value == self._t("filter_nonempty"):
                 if ":draft:" in key or ":session:" in key:
                     if self._is_empty_session(value):
@@ -503,6 +657,13 @@ class OpenCodeSessionManager:
                 parts = key.split(":")
                 if len(parts) >= 2:
                     ws_name = parts[0]
+
+                    # 应用时间筛选
+                    if time_threshold:
+                        ws_time = workspace_times.get(ws_name)
+                        if ws_time and ws_time < time_threshold:
+                            continue
+
                     if ws_name not in workspaces:
                         workspaces[ws_name] = []
                     workspaces[ws_name].append((key, value))
@@ -519,7 +680,9 @@ class OpenCodeSessionManager:
         # 添加工作区会话节点
         for ws_name, sessions in sorted(workspaces.items()):
             display_name = self._decode_workspace_name(ws_name)
-            ws_node = self.tree.insert("", tk.END, text=f"📁 {display_name} ({len(sessions)})", open=False)
+            ws_time = workspace_times.get(ws_name)
+            time_str = ws_time.strftime("%m/%d %H:%M") if ws_time else ""
+            ws_node = self.tree.insert("", tk.END, text=f"📁 {display_name} ({len(sessions)}) [{time_str}]", open=False)
             for key, value in sessions:
                 preview = self._extract_preview(value)
                 self.tree.insert(ws_node, tk.END, text=preview, values=(key, value))
@@ -660,10 +823,21 @@ class OpenCodeSessionManager:
 
         try:
             cursor = self.conn.cursor()
-            placeholders = ",".join(["?"] * len(keys_to_delete))
-            cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", keys_to_delete)
-            self.conn.commit()
 
+            # 检查是新数据库还是旧数据库
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
+            is_new_db = cursor.fetchone() is not None
+
+            if is_new_db:
+                # 新数据库：删除会话（级联删除消息）
+                placeholders = ",".join(["?"] * len(keys_to_delete))
+                cursor.execute(f"DELETE FROM session WHERE id IN ({placeholders})", keys_to_delete)
+            else:
+                # 旧数据库：删除 document 记录
+                placeholders = ",".join(["?"] * len(keys_to_delete))
+                cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", keys_to_delete)
+
+            self.conn.commit()
             self.status_var.set(self._t("deleted_records", count))
             self._load_data()
 
@@ -678,36 +852,56 @@ class OpenCodeSessionManager:
 
         try:
             cursor = self.conn.cursor()
-            cursor.execute("SELECT key, value FROM document")
-            rows = cursor.fetchall()
 
-            empty_keys = []
-            for row in rows:
-                key = row["key"]
-                value = row["value"]
+            # 检查是新数据库还是旧数据库
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
+            is_new_db = cursor.fetchone() is not None
 
-                # 只处理草稿和会话
-                if ":draft:" not in key and ":session:" not in key:
-                    continue
+            if is_new_db:
+                # 新数据库：删除已归档的会话
+                cursor.execute("SELECT id FROM session WHERE time_archived IS NOT NULL")
+                archived_ids = [row["id"] for row in cursor.fetchall()]
 
-                # 检查是否为空
-                if self._is_empty_session(value):
-                    empty_keys.append(key)
+                if not archived_ids:
+                    messagebox.showinfo(self._t("confirm_delete_title"), self._t("no_empty_sessions"))
+                    return
 
-            if not empty_keys:
-                messagebox.showinfo(self._t("confirm_delete_title"), self._t("no_empty_sessions"))
-                return
+                count = len(archived_ids)
+                if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_empty_msg", count)):
+                    return
 
-            # 确认删除
-            count = len(empty_keys)
-            if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_empty_msg", count)):
-                return
+                placeholders = ",".join(["?"] * len(archived_ids))
+                cursor.execute(f"DELETE FROM session WHERE id IN ({placeholders})", archived_ids)
+            else:
+                # 旧数据库：删除空会话
+                cursor.execute("SELECT key, value FROM document")
+                rows = cursor.fetchall()
 
-            # 删除空会话
-            placeholders = ",".join(["?"] * len(empty_keys))
-            cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", empty_keys)
+                empty_keys = []
+                for row in rows:
+                    key = row["key"]
+                    value = row["value"]
+
+                    # 只处理草稿和会话
+                    if ":draft:" not in key and ":session:" not in key:
+                        continue
+
+                    # 检查是否为空
+                    if self._is_empty_session(value):
+                        empty_keys.append(key)
+
+                if not empty_keys:
+                    messagebox.showinfo(self._t("confirm_delete_title"), self._t("no_empty_sessions"))
+                    return
+
+                count = len(empty_keys)
+                if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_empty_msg", count)):
+                    return
+
+                placeholders = ",".join(["?"] * len(empty_keys))
+                cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", empty_keys)
+
             self.conn.commit()
-
             self.status_var.set(self._t("deleted_empty_sessions", count))
             self._load_data()
 
