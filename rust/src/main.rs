@@ -15,19 +15,9 @@ fn main() -> eframe::Result<()> {
         "OpenCode Session Manager",
         options,
         Box::new(|cc| {
-            setup_fonts(&cc.egui_ctx);
             Ok(Box::new(App::new(cc)))
         }),
     )
-}
-
-fn setup_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    fonts.families
-        .get_mut(&egui::FontFamily::Proportional)
-        .unwrap()
-        .push("fonts/NotoSansSC-Regular.ttf".to_owned());
-    ctx.set_fonts(fonts);
 }
 
 #[derive(Clone, Debug)]
