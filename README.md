@@ -1,13 +1,13 @@
 # OpenCode Session Manager
 
-> 管理 opencode 会话的 GUI 工具
+> 管理 opencode 会话的 GUI/TUI 工具
 
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL%203.0-green.svg)](LICENSE)
 
 ## 简介
 
-OpenCode Session Manager 是一个用于管理 [opencode](https://github.com/anomalyco/opencode) 会话数据的桌面 GUI 工具。它可以帮助你查看、删除、压缩和存档 opencode 的会话记录。
+OpenCode Session Manager 是一个用于管理 [opencode](https://github.com/anomalyco/opencode) 会话数据的桌面工具。支持 GUI（图形界面）和 TUI（终端界面）两种模式，可以帮助你查看、删除、压缩和存档 opencode 的会话记录。
 
 ## 功能特性
 
@@ -15,19 +15,21 @@ OpenCode Session Manager 是一个用于管理 [opencode](https://github.com/ano
 |------|------|
 | 📋 查看 | 按工作区分组显示所有会话和草稿，支持预览提示词内容 |
 | 🗑️ 删除 | 批量选择并删除不需要的会话或草稿 |
+| 🧹 清理 | 一键删除所有空会话 |
 | 📦 压缩 | VACUUM 数据库，清理删除操作留下的空闲空间 |
 | 💾 存档 | 导出会话到 JSON 文件进行备份，支持导入恢复 |
+| 🌐 中英文 | 支持中文/英文界面切换 |
 
 ## 系统要求
 
 - Python 3.7 或更高版本
-- tkinter（Python 内置，无需额外安装）
+- tkinter（Python 内置，GUI 模式需要）
 
 ## 安装
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/opencode-session-manager.git
+git clone https://github.com/VeloxLLM/opencode-session-manager.git
 
 # 进入项目目录
 cd opencode-session-manager
@@ -35,9 +37,31 @@ cd opencode-session-manager
 
 ## 使用方法
 
+### GUI 模式（图形界面）
+
 ```bash
 python opencode_session_manager.py
 ```
+
+### TUI 模式（终端界面）
+
+```bash
+python tui.py
+```
+
+或在 GUI 中点击「终端版」按钮启动。
+
+### TUI 快捷键
+
+| 键 | 功能 |
+|---|------|
+| ↑/↓ | 上下移动 |
+| Enter | 查看详情 |
+| d | 删除当前会话 |
+| e | 删除空会话 |
+| v | 压缩数据库 |
+| r | 刷新 |
+| q | 退出 |
 
 ### 数据库位置
 
@@ -52,9 +76,11 @@ python opencode_session_manager.py
 
 ## 界面说明
 
+### GUI 界面
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  [刷新] [选择数据库] │ [压缩数据库] [存档选中] [导入存档]    │
+│  [刷新] [选择数据库] │ [删除空会话] [压缩数据库] [存档] [导入] │
 ├─────────────────────────────────────────────────────────────┤
 │ 数据库信息: 路径/大小/记录数                                  │
 ├────────────────────────────┬────────────────────────────────┤
@@ -70,6 +96,19 @@ python opencode_session_manager.py
 │                            │                                │
 │ 🌐 全局历史                 │                                │
 └────────────────────────────┴────────────────────────────────┘
+```
+
+### TUI 界面
+
+```
+ OpenCode Session Manager (TUI)                Sessions: 91
+    1. 给我一个 git 的名字...
+    2. 用 py 写一个管理 opencode...
+    3. (empty)
+    4. 检测一下速度大概是多少...
+    ...
+───────────────────────────────────────────────────────────────
+ q:Quit  d:Delete  e:DeleteEmpty  v:Vacuum  a:Archive  r:Refresh
 ```
 
 ## 存档格式
@@ -104,17 +143,10 @@ opencode 使用 SQLite 数据库存储会话数据：
 - `opencode.workspace.*.dat:session:ses_*:prompt` - 工作区会话
 - `opencode.global.dat:prompt-history` - 全局历史
 
-## 开发
-
-```bash
-# 运行程序
-python opencode_session_manager.py
-```
-
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+GPL 3.0 - 详见 [LICENSE](LICENSE) 文件

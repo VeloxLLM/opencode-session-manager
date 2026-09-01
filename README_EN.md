@@ -1,13 +1,13 @@
 # OpenCode Session Manager
 
-> A GUI tool for managing opencode sessions
+> A GUI/TUI tool for managing opencode sessions
 
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL%203.0-green.svg)](LICENSE)
 
 ## Introduction
 
-OpenCode Session Manager is a desktop GUI tool for managing [opencode](https://github.com/anomalyco/opencode) session data. It helps you view, delete, compress, and archive your opencode session records.
+OpenCode Session Manager is a desktop tool for managing [opencode](https://github.com/anomalyco/opencode) session data. It supports both GUI (graphical interface) and TUI (terminal interface) modes, helping you view, delete, compress, and archive your opencode session records.
 
 ## Features
 
@@ -15,19 +15,21 @@ OpenCode Session Manager is a desktop GUI tool for managing [opencode](https://g
 |---------|-------------|
 | 📋 View | Display all sessions and drafts grouped by workspace, with prompt preview |
 | 🗑️ Delete | Batch select and delete unwanted sessions or drafts |
+| 🧹 Clean | One-click delete all empty sessions |
 | 📦 Compress | VACUUM database to reclaim space from deleted records |
 | 💾 Archive | Export sessions to JSON files for backup, with import support |
+| 🌐 Language | Support Chinese/English interface switching |
 
 ## Requirements
 
 - Python 3.7 or higher
-- tkinter (built into Python, no additional installation needed)
+- tkinter (built into Python, needed for GUI mode)
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/opencode-session-manager.git
+git clone https://github.com/VeloxLLM/opencode-session-manager.git
 
 # Enter the project directory
 cd opencode-session-manager
@@ -35,9 +37,31 @@ cd opencode-session-manager
 
 ## Usage
 
+### GUI Mode (Graphical Interface)
+
 ```bash
 python opencode_session_manager.py
 ```
+
+### TUI Mode (Terminal Interface)
+
+```bash
+python tui.py
+```
+
+Or click the "TUI" button in the GUI to launch.
+
+### TUI Shortcuts
+
+| Key | Function |
+|-----|----------|
+| ↑/↓ | Move up/down |
+| Enter | View details |
+| d | Delete current session |
+| e | Delete empty sessions |
+| v | Vacuum database |
+| r | Refresh |
+| q | Quit |
 
 ### Database Location
 
@@ -52,9 +76,11 @@ If not found, click the "Select Database" button to manually choose the file.
 
 ## Interface
 
+### GUI Interface
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  [Refresh] [Select DB] │ [Vacuum] [Archive] [Import]       │
+│  [Refresh] [Select DB] │ [Del Empty] [Vacuum] [Archive] [Import] │
 ├─────────────────────────────────────────────────────────────┤
 │ Database Info: path/size/record count                       │
 ├────────────────────────────┬────────────────────────────────┤
@@ -70,6 +96,19 @@ If not found, click the "Select Database" button to manually choose the file.
 │                            │                                │
 │ 🌐 Global History          │                                │
 └────────────────────────────┴────────────────────────────────┘
+```
+
+### TUI Interface
+
+```
+ OpenCode Session Manager (TUI)                Sessions: 91
+    1. 给我一个 git 的名字...
+    2. 用 py 写一个管理 opencode...
+    3. (empty)
+    4. 检测一下速度大概是多少...
+    ...
+───────────────────────────────────────────────────────────────
+ q:Quit  d:Delete  e:DeleteEmpty  v:Vacuum  a:Archive  r:Refresh
 ```
 
 ## Archive Format
@@ -104,17 +143,10 @@ Key name formats:
 - `opencode.workspace.*.dat:session:ses_*:prompt` - Workspace sessions
 - `opencode.global.dat:prompt-history` - Global history
 
-## Development
-
-```bash
-# Run the program
-python opencode_session_manager.py
-```
-
 ## Contributing
 
 Issues and Pull Requests are welcome!
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+GPL 3.0 - See [LICENSE](LICENSE) file for details
