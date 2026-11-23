@@ -1,1225 +1,599 @@
 #!/usr/bin/env python3
-"""
-OpenCode Session Manager
-管理 opencode 会话的 GUI 工具
-功能：查看、删除、压缩、存档、归档管理
-"""
+"""OpenCode Session Manager - tkinter GUI for v2/v1 session databases."""
 
-import os
-import sys
+from __future__ import annotations
+
 import json
-import shutil
 import sqlite3
+import sys
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from tkinter import filedialog, messagebox, ttk
+from typing import Dict, List, Optional
+
+try:
+    import opencode_core as core
+except ImportError:  # allow `python py/opencode_session_manager.py`
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import opencode_core as core
 
 
-# 翻译字典
-TRANSLATIONS = {
+TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "zh": {
-        "window_title": "OpenCode 会话管理器",
+        "window_title": "OpenCode 会话管理器 v2",
+        "language": "中/EN",
         "refresh": "刷新",
         "select_db": "选择数据库",
-        "delete_empty": "删除空会话",
         "vacuum": "压缩数据库",
-        "archive": "存档选中",
-        "import_archive": "导入存档",
+        "export": "导出选中",
+        "import": "导入存档",
+        "delete_archived": "删除已归档",
         "archive_manager": "归档管理",
-        "lang_switch": "English",
-        "status_ready": "就绪",
-        "db_info_title": "数据库信息",
-        "db_info_empty": "未加载",
-        "session_list_title": "会话列表",
-        "session_detail_title": "会话详情",
         "select_all": "全选",
         "deselect_all": "取消全选",
         "delete_selected": "删除选中",
-        "drafts": "草稿",
-        "workspaces": "工作区",
-        "global_history": "全局历史",
-        "prompt_history": "提示词历史",
-        "key_header": "=== 键 ===",
-        "content_header_json": "=== 内容 (JSON) ===",
-        "content_header": "=== 内容 ===",
-        "empty": "(空)",
-        "parse_error": "(无法解析)",
-        "db_not_found_title": "未找到数据库",
-        "db_not_found_msg": "请点击「选择数据库」按钮选择 drafts.sqlite 文件",
-        "db_load_error": "加载数据库失败",
-        "select_db_title": "选择 opencode drafts.sqlite 文件",
-        "db_types": [("SQLite 数据库", "*.sqlite"), ("所有文件", "*.*")],
-        "records_loaded": "已加载 {} 条记录",
-        "load_failed": "加载失败",
-        "no_selection_warning": "请先选择要删除的会话",
-        "confirm_delete_title": "确认删除",
-        "confirm_delete_msg": "确定要删除 {} 条记录吗？\n\n此操作不可撤销！",
-        "deleted_records": "已删除 {} 条记录",
-        "delete_error": "删除失败",
-        "no_empty_sessions": "没有找到空会话",
-        "confirm_delete_empty_title": "确认删除",
-        "confirm_delete_empty_msg": "找到 {} 个空会话，确定要删除吗？\n\n此操作不可撤销！",
-        "deleted_empty_sessions": "已删除 {} 个空会话",
-        "delete_empty_error": "删除空会话失败",
-        "no_db_warning": "请先加载数据库",
-        "confirm_vacuum_title": "确认压缩",
-        "confirm_vacuum_msg": "确定要压缩数据库吗？\n\n这将清理删除操作留下的空闲空间。",
-        "vacuuming": "正在压缩数据库...",
-        "vacuum_complete": "压缩完成",
-        "vacuum_before": "压缩前: {}",
-        "vacuum_after": "压缩后: {}",
-        "vacuum_saved": "节省: {}",
-        "vacuum_error": "压缩失败",
-        "no_selection_archive_warning": "请先选择要存档的会话",
-        "save_archive_title": "保存存档",
-        "archive_types": [("JSON 文件", "*.json")],
-        "archive_default_name": "opencode_archive_{}.json",
-        "archive_saved": "已存档 {} 条记录到 {}",
-        "archive_success": "已保存 {} 条记录",
-        "archive_error": "存档失败",
-        "select_archive_title": "选择存档文件",
-        "invalid_archive": "无效的存档文件格式",
-        "confirm_import_title": "确认导入",
-        "confirm_import_msg": "确定要导入 {} 条记录吗？\n\n重复的键将被覆盖！",
-        "imported_records": "已导入 {} 条记录",
-        "import_error": "导入失败",
-        "filter_label": "筛选:",
-        "filter_all": "全部",
-        "filter_nonempty": "有内容",
-        "filter_empty": "空会话",
+        "search": "搜索",
+        "status": "状态",
+        "time": "时间",
+        "status_all": "全部",
+        "status_active": "活跃",
+        "status_archived": "已归档",
+        "time_all": "全部",
         "time_today": "今天",
-        "time_week": "7天内",
-        "time_month": "30天内",
+        "time_7d": "7天内",
+        "time_30d": "30天内",
+        "sessions": "会话列表",
+        "detail": "会话详情",
+        "db_info": "数据库信息",
+        "ready": "就绪",
+        "no_db": "未找到数据库，请手动选择 opencode.db",
+        "no_db_title": "未找到数据库",
+        "no_selection": "请先选择会话",
+        "confirm_delete": "确认删除",
+        "confirm_delete_msg": "确定删除选中的 {} 个会话吗？\n关联消息会一并删除，此操作不可撤销！",
+        "confirm_archived_msg": "确定删除全部 {} 个已归档会话吗？\n此操作不可撤销！",
+        "deleted": "已删除 {} 个会话",
+        "no_archived": "没有已归档的会话",
+        "save_archive": "保存存档",
+        "archive_saved": "已导出 {} 个会话",
+        "archive_failed": "导出失败",
+        "select_archive": "选择存档文件",
+        "confirm_import": "确认导入",
+        "confirm_import_msg": "导入存档会写入当前数据库，重复的会话将被覆盖。继续吗？",
+        "import_done": "已导入 {} 个会话、{} 条消息、{} 个片段、{} 条旧记录",
+        "import_failed": "导入失败",
+        "invalid_archive": "无效的存档文件格式",
+        "vacuum_done": "压缩完成，节省 {}",
+        "vacuum_failed": "压缩失败",
+        "confirm_vacuum": "确认压缩",
+        "confirm_vacuum_msg": "压缩会重建数据库文件。请尽量在 opencode 关闭时执行。继续吗？",
+        "loaded": "已加载 {} 个会话",
+        "load_failed": "加载失败",
+        "error": "错误",
+        "path": "路径",
+        "size": "大小",
+        "tables": "数据表",
+        "v2": "v2 会话",
+        "v1": "v1 会话",
+        "archived_count": "已归档",
+        "legacy_records": "旧版记录",
+        "title": "标题",
+        "id": "ID",
+        "schema": "数据表",
+        "version": "版本",
+        "directory": "目录",
+        "created": "创建时间",
+        "updated": "更新时间",
+        "messages": "消息数",
+        "tokens": "Token",
+        "cost": "费用",
+        "archive_db_missing": "未找到桌面版归档数据库 drafts.sqlite",
+        "archive_records": "归档记录",
+        "archive_hint": "旧版桌面归档数据（document 表）",
     },
     "en": {
-        "window_title": "OpenCode Session Manager",
+        "window_title": "OpenCode Session Manager v2",
+        "language": "EN/中",
         "refresh": "Refresh",
         "select_db": "Select DB",
-        "delete_empty": "Delete Empty",
-        "vacuum": "Vacuum DB",
-        "archive": "Archive",
-        "import_archive": "Import",
+        "vacuum": "Vacuum",
+        "export": "Export",
+        "import": "Import",
+        "delete_archived": "Delete Archived",
         "archive_manager": "Archive Manager",
-        "lang_switch": "中文",
-        "status_ready": "Ready",
-        "db_info_title": "Database Info",
-        "db_info_empty": "Not loaded",
-        "session_list_title": "Session List",
-        "session_detail_title": "Session Detail",
         "select_all": "Select All",
         "deselect_all": "Deselect All",
         "delete_selected": "Delete Selected",
-        "drafts": "Drafts",
-        "workspaces": "Workspaces",
-        "global_history": "Global History",
-        "prompt_history": "Prompt History",
-        "key_header": "=== Key ===",
-        "content_header_json": "=== Content (JSON) ===",
-        "content_header": "=== Content ===",
-        "empty": "(empty)",
-        "parse_error": "(parse error)",
-        "db_not_found_title": "Database Not Found",
-        "db_not_found_msg": "Please click 'Select DB' to choose drafts.sqlite file",
-        "db_load_error": "Failed to load database",
-        "select_db_title": "Select opencode drafts.sqlite file",
-        "db_types": [("SQLite Database", "*.sqlite"), ("All Files", "*.*")],
-        "records_loaded": "Loaded {} records",
-        "load_failed": "Load failed",
-        "no_selection_warning": "Please select sessions to delete first",
-        "confirm_delete_title": "Confirm Delete",
-        "confirm_delete_msg": "Delete {} records?\n\nThis action cannot be undone!",
-        "deleted_records": "Deleted {} records",
-        "delete_error": "Delete failed",
-        "no_empty_sessions": "No empty sessions found",
-        "confirm_delete_empty_title": "Confirm Delete",
-        "confirm_delete_empty_msg": "Found {} empty sessions, delete them?\n\nThis action cannot be undone!",
-        "deleted_empty_sessions": "Deleted {} empty sessions",
-        "delete_empty_error": "Failed to delete empty sessions",
-        "no_db_warning": "Please load database first",
-        "confirm_vacuum_title": "Confirm Vacuum",
-        "confirm_vacuum_msg": "Vacuum database?\n\nThis will reclaim space from deleted records.",
-        "vacuuming": "Vacuuming database...",
-        "vacuum_complete": "Vacuum Complete",
-        "vacuum_before": "Before: {}",
-        "vacuum_after": "After: {}",
-        "vacuum_saved": "Saved: {}",
-        "vacuum_error": "Vacuum failed",
-        "no_selection_archive_warning": "Please select sessions to archive first",
-        "save_archive_title": "Save Archive",
-        "archive_types": [("JSON Files", "*.json")],
-        "archive_default_name": "opencode_archive_{}.json",
-        "archive_saved": "Archived {} records to {}",
-        "archive_success": "Saved {} records",
-        "archive_error": "Archive failed",
-        "select_archive_title": "Select Archive File",
-        "invalid_archive": "Invalid archive file format",
-        "confirm_import_title": "Confirm Import",
-        "confirm_import_msg": "Import {} records?\n\nDuplicate keys will be overwritten!",
-        "imported_records": "Imported {} records",
-        "import_error": "Import failed",
-        "filter_label": "Filter:",
-        "filter_all": "All",
-        "filter_nonempty": "Non-empty",
-        "filter_empty": "Empty",
+        "search": "Search",
+        "status": "Status",
+        "time": "Time",
+        "status_all": "All",
+        "status_active": "Active",
+        "status_archived": "Archived",
+        "time_all": "All",
         "time_today": "Today",
-        "time_week": "7 Days",
-        "time_month": "30 Days",
-    }
+        "time_7d": "7 Days",
+        "time_30d": "30 Days",
+        "sessions": "Sessions",
+        "detail": "Details",
+        "db_info": "Database",
+        "ready": "Ready",
+        "no_db": "Database not found. Please select opencode.db manually.",
+        "no_db_title": "Database Not Found",
+        "no_selection": "Please select sessions first",
+        "confirm_delete": "Confirm Delete",
+        "confirm_delete_msg": "Delete {} selected session(s)?\nMessages will be removed too. This cannot be undone!",
+        "confirm_archived_msg": "Delete all {} archived sessions?\nThis cannot be undone!",
+        "deleted": "Deleted {} session(s)",
+        "no_archived": "No archived sessions found",
+        "save_archive": "Save Archive",
+        "archive_saved": "Exported {} session(s)",
+        "archive_failed": "Export failed",
+        "select_archive": "Select Archive File",
+        "confirm_import": "Confirm Import",
+        "confirm_import_msg": "Import will write to the current database; duplicate sessions are replaced. Continue?",
+        "import_done": "Imported {} sessions, {} messages, {} parts, {} legacy records",
+        "import_failed": "Import failed",
+        "invalid_archive": "Invalid archive format",
+        "vacuum_done": "Vacuum complete, saved {}",
+        "vacuum_failed": "Vacuum failed",
+        "confirm_vacuum": "Confirm Vacuum",
+        "confirm_vacuum_msg": "Vacuum rebuilds the database file. Close opencode first if possible. Continue?",
+        "loaded": "Loaded {} session(s)",
+        "load_failed": "Load failed",
+        "error": "Error",
+        "path": "Path",
+        "size": "Size",
+        "tables": "Tables",
+        "v2": "v2 sessions",
+        "v1": "v1 sessions",
+        "archived_count": "Archived",
+        "legacy_records": "Legacy records",
+        "title": "Title",
+        "id": "ID",
+        "schema": "Table",
+        "version": "Version",
+        "directory": "Directory",
+        "created": "Created",
+        "updated": "Updated",
+        "messages": "Messages",
+        "tokens": "Tokens",
+        "cost": "Cost",
+        "archive_db_missing": "Desktop archive database drafts.sqlite not found",
+        "archive_records": "Archive records",
+        "archive_hint": "Legacy desktop drafts (document table)",
+    },
 }
+
+STATUS_KEYS = ("status_all", "status_active", "status_archived")
+TIME_KEYS = ("time_all", "time_today", "time_7d", "time_30d")
 
 
 class ArchiveManagerWindow:
-    """归档管理器窗口"""
+    """Window for the legacy drafts.sqlite document table."""
 
-    def __init__(self, parent, archive_db_path: Path, lang: str = "zh"):
-        self.archive_db_path = archive_db_path
+    def __init__(self, parent: tk.Tk, db_path: Path, lang: str):
+        self.db_path = db_path
         self.lang = lang
-        self._ = TRANSLATIONS[lang]
-        self.conn = None
-
-        # 创建新窗口
+        self.conn = core.connect(db_path)
         self.window = tk.Toplevel(parent)
-        self.window.title(self._t("archive_manager"))
-        self.window.geometry("800x500")
+        self.window.geometry("820x520")
         self.window.minsize(600, 400)
+        self.window.protocol("WM_DELETE_WINDOW", self._close)
 
-        self._setup_ui()
-        self._load_data()
+        main = ttk.Frame(self.window, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(main, text=self.t("archive_hint")).pack(anchor=tk.W, pady=(0, 8))
 
-    def _t(self, key: str, *args) -> str:
-        """翻译函数"""
-        text = self._.get(key, key)
-        if args:
-            text = text.format(*args)
-        return text
-
-    def _setup_ui(self):
-        """设置 UI"""
-        main_frame = ttk.Frame(self.window, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # 信息
-        info_frame = ttk.LabelFrame(main_frame, text=self._t("db_info_title"), padding="5")
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-
-        self.info_var = tk.StringVar(value=f"{self._t('db_info_empty')}")
-        ttk.Label(info_frame, textvariable=self.info_var).pack(anchor=tk.W)
-
-        # 会话列表
-        list_frame = ttk.LabelFrame(main_frame, text="归档会话", padding="5")
-        list_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.tree = ttk.Treeview(list_frame, show="tree", selectmode="extended")
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        frame = ttk.LabelFrame(main, text=self.t("archive_records"), padding=5)
+        frame.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(frame, show="tree", selectmode="extended")
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
-
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 按钮
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=(10, 0))
+        buttons = ttk.Frame(main)
+        buttons.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(buttons, text=self.t("refresh"), command=self._reload).pack(side=tk.LEFT)
+        ttk.Button(buttons, text=self.t("select_all"), command=self._select_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttons, text=self.t("deselect_all"), command=self._deselect_all).pack(side=tk.LEFT)
+        ttk.Button(buttons, text=self.t("delete_selected"), command=self._delete).pack(side=tk.RIGHT)
+        self._reload()
 
-        ttk.Button(btn_frame, text="刷新", command=self._load_data).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="全选", command=self._select_all).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected).pack(side=tk.RIGHT)
+    def t(self, key: str, *args) -> str:
+        text = TRANSLATIONS[self.lang].get(key, key)
+        return text.format(*args) if args else text
 
-    def _load_data(self):
-        """加载数据"""
-        try:
-            if self.conn:
-                self.conn.close()
+    def _reload(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        for key, value in core.list_legacy_records(self.conn):
+            preview = core.extract_preview(value) or "(empty)"
+            self.tree.insert("", tk.END, text=f"{preview[:60]}", values=(key,))
 
-            self.conn = sqlite3.connect(str(self.archive_db_path))
-            self.conn.row_factory = sqlite3.Row
+    def _select_all(self) -> None:
+        self.tree.selection_add(*self.tree.get_children())
 
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM document")
-            total = cursor.fetchone()[0]
+    def _deselect_all(self) -> None:
+        self.tree.selection_remove(*self.tree.selection())
 
-            self.info_var.set(f"路径: {self.archive_db_path} | 记录: {total}")
-            self._load_tree()
-
-        except Exception as e:
-            messagebox.showerror("错误", f"加载归档数据库失败:\n{str(e)}")
-
-    def _load_tree(self):
-        """加载会话树"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        if not self.conn:
+    def _delete(self) -> None:
+        keys = [self.tree.item(item, "values")[0] for item in self.tree.selection()]
+        if not keys:
+            messagebox.showwarning(self.t("confirm_delete"), self.t("no_selection"))
             return
-
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT key, value FROM document ORDER BY key")
-        rows = cursor.fetchall()
-
-        drafts = []
-        workspaces = {}
-
-        for row in rows:
-            key = row["key"]
-            value = row["value"]
-
-            if ":draft:" in key:
-                drafts.append((key, value))
-            elif ":session:" in key:
-                parts = key.split(":")
-                if len(parts) >= 2:
-                    ws_name = parts[0]
-                    if ws_name not in workspaces:
-                        workspaces[ws_name] = []
-                    workspaces[ws_name].append((key, value))
-
-        # 添加草稿
-        if drafts:
-            draft_node = self.tree.insert("", tk.END, text=f"📝 草稿 ({len(drafts)})", open=True)
-            for key, value in drafts:
-                preview = self._extract_preview(value)
-                self.tree.insert(draft_node, tk.END, text=preview, values=(key,))
-
-        # 添加工作区
-        for ws_name, sessions in sorted(workspaces.items()):
-            ws_node = self.tree.insert("", tk.END, text=f"📁 {ws_name} ({len(sessions)})", open=False)
-            for key, value in sessions:
-                preview = self._extract_preview(value)
-                self.tree.insert(ws_node, tk.END, text=preview, values=(key,))
-
-    def _extract_preview(self, value: str) -> str:
-        """提取预览"""
-        try:
-            data = json.loads(value)
-            if "prompt" in data:
-                prompt_parts = data["prompt"]
-                if isinstance(prompt_parts, list):
-                    for part in prompt_parts:
-                        if isinstance(part, dict) and "content" in part:
-                            content = part["content"]
-                            if content:
-                                return content[:50] + ("..." if len(content) > 50 else "")
-            return "(空)"
-        except:
-            return "(无法解析)"
-
-    def _select_all(self):
-        """全选"""
-        for item in self.tree.get_children():
-            self.tree.selection_add(item)
-            for child in self.tree.get_children(item):
-                self.tree.selection_add(child)
-
-    def _delete_selected(self):
-        """删除选中"""
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning("警告", "请先选择要删除的记录")
+        if not messagebox.askyesno(self.t("confirm_delete"), self.t("confirm_delete_msg", len(keys))):
             return
+        core.delete_legacy_records(self.conn, keys)
+        self._reload()
 
-        keys_to_delete = []
-        for item in selected:
-            values = self.tree.item(item, "values")
-            if values:
-                keys_to_delete.append(values[0])
-
-        if not keys_to_delete:
-            return
-
-        count = len(keys_to_delete)
-        if not messagebox.askyesno("确认删除", f"确定要删除 {count} 条记录吗？\n\n此操作不可撤销！"):
-            return
-
-        try:
-            cursor = self.conn.cursor()
-            placeholders = ",".join(["?"] * len(keys_to_delete))
-            cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", keys_to_delete)
-            self.conn.commit()
-            self._load_data()
-        except Exception as e:
-            messagebox.showerror("错误", f"删除失败:\n{str(e)}")
+    def _close(self) -> None:
+        self.conn.close()
+        self.window.destroy()
 
 
 class OpenCodeSessionManager:
-    """OpenCode 会话管理器"""
-
     def __init__(self):
+        self.lang = "zh"
+        self.db_path: Optional[Path] = core.find_database()
+        self.conn: Optional[sqlite3.Connection] = None
+        self.sessions: List[core.SessionInfo] = []
+        self.widgets: Dict[str, tk.Widget] = {}
+
         self.root = tk.Tk()
-        self.lang = "zh"  # 默认中文
-        self._ = TRANSLATIONS[self.lang]
-
-        self.root.title(self._["window_title"])
-        self.root.geometry("1000x700")
-        self.root.minsize(800, 500)
-
-        # 数据库路径
-        self.db_path = self._find_database()
-        self.conn = None
-        self.sessions_data = {}
-
-        # UI 组件引用
-        self.widgets = {}
-
-        self._setup_ui()
+        self.root.geometry("1100x720")
+        self.root.minsize(860, 560)
+        self._build_ui()
         self._load_data()
 
-    def _t(self, key: str, *args) -> str:
-        """翻译函数"""
-        text = self._.get(key, key)
-        if args:
-            text = text.format(*args)
-        return text
+    def t(self, key: str, *args) -> str:
+        text = TRANSLATIONS[self.lang].get(key, key)
+        return text.format(*args) if args else text
 
-    def _find_database(self) -> Optional[Path]:
-        """查找 opencode 数据库文件"""
-        # 优先查找 opencode CLI 数据库（当前会话）
-        cli_db = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
-        if cli_db.exists():
-            return cli_db
+    def _build_ui(self) -> None:
+        main = ttk.Frame(self.root, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
 
-        # 备选：桌面版数据库（归档）
-        possible_paths = [
-            Path(os.environ.get("APPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
+        toolbar = ttk.Frame(main)
+        toolbar.pack(fill=tk.X, pady=(0, 8))
+        specs = [
+            ("btn_lang", "language", "_switch_language"),
+            ("btn_refresh", "refresh", "_load_data"),
+            ("btn_select_db", "select_db", "_select_database"),
+            ("btn_vacuum", "vacuum", "_vacuum"),
+            ("btn_export", "export", "_export"),
+            ("btn_import", "import", "_import"),
+            ("btn_archived", "delete_archived", "_delete_archived"),
+            ("btn_archive_manager", "archive_manager", "_open_archive_manager"),
         ]
+        for name, label, command in specs:
+            self.widgets[name] = ttk.Button(toolbar, text=self.t(label), command=getattr(self, command))
+            self.widgets[name].pack(side=tk.LEFT, padx=(0, 4))
+            if name in {"btn_lang", "btn_select_db", "btn_vacuum", "btn_import"}:
+                ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
 
-        for path in possible_paths:
-            if path.exists():
-                return path
+        self.status_var = tk.StringVar(value=self.t("ready"))
+        ttk.Label(toolbar, textvariable=self.status_var).pack(side=tk.RIGHT)
 
-        return None
+        info = ttk.LabelFrame(main, text=self.t("db_info"), padding=5)
+        info.pack(fill=tk.X, pady=(0, 8))
+        self.widgets["info_frame"] = info
+        self.db_info_var = tk.StringVar(value=self.t("ready"))
+        ttk.Label(info, textvariable=self.db_info_var, justify=tk.LEFT).pack(anchor=tk.W)
 
-    def _get_workspace_times(self) -> Dict[str, datetime]:
-        """获取工作区的最后修改时间"""
-        workspace_times = {}
-        if not self.db_path:
-            return workspace_times
+        filters = ttk.Frame(main)
+        filters.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(filters, text=self.t("search")).pack(side=tk.LEFT)
+        self.search_var = tk.StringVar()
+        entry = ttk.Entry(filters, textvariable=self.search_var, width=28)
+        entry.pack(side=tk.LEFT, padx=(4, 10))
+        entry.bind("<Return>", lambda _: self._load_tree())
 
-        data_dir = self.db_path.parent
-        for dat_file in data_dir.glob("opencode.workspace.*.dat"):
-            # 解码工作区名称
-            ws_name = dat_file.stem  # 去掉 .dat 后缀
-            mtime = datetime.fromtimestamp(dat_file.stat().st_mtime)
-            workspace_times[ws_name] = mtime
-
-        return workspace_times
-
-    def _setup_ui(self):
-        """设置 UI 界面"""
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # 顶部工具栏
-        toolbar = ttk.Frame(main_frame)
-        toolbar.pack(fill=tk.X, pady=(0, 10))
-
-        # 语言切换按钮（第一位）
-        self.widgets["btn_lang"] = ttk.Button(toolbar, text=self._t("lang_switch"), command=self._switch_language)
-        self.widgets["btn_lang"].pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-
-        # 左侧按钮
-        self.widgets["btn_refresh"] = ttk.Button(toolbar, text=self._t("refresh"), command=self._load_data)
-        self.widgets["btn_refresh"].pack(side=tk.LEFT, padx=(0, 5))
-
-        self.widgets["btn_select_db"] = ttk.Button(toolbar, text=self._t("select_db"), command=self._select_database)
-        self.widgets["btn_select_db"].pack(side=tk.LEFT, padx=(0, 5))
-
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-
-        self.widgets["btn_vacuum"] = ttk.Button(toolbar, text=self._t("vacuum"), command=self._vacuum_database)
-        self.widgets["btn_vacuum"].pack(side=tk.LEFT, padx=(0, 5))
-
-        self.widgets["btn_archive"] = ttk.Button(toolbar, text=self._t("archive"), command=self._archive_selected)
-        self.widgets["btn_archive"].pack(side=tk.LEFT, padx=(0, 5))
-
-        self.widgets["btn_import"] = ttk.Button(toolbar, text=self._t("import_archive"), command=self._import_archive)
-        self.widgets["btn_import"].pack(side=tk.LEFT)
-
-        # 归档管理按钮
-        self.widgets["btn_archive_manager"] = ttk.Button(toolbar, text=self._t("archive_manager"), command=self._open_archive_manager)
-        self.widgets["btn_archive_manager"].pack(side=tk.LEFT, padx=(10, 0))
-
-        # 筛选下拉框
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(toolbar, text=self._t("filter_label")).pack(side=tk.LEFT, padx=(5, 0))
-        self.filter_var = tk.StringVar(value=self._t("filter_all"))
-        self.widgets["filter"] = ttk.Combobox(
-            toolbar,
-            textvariable=self.filter_var,
-            values=[self._t("filter_all"), self._t("filter_nonempty"), self._t("filter_empty")],
-            state="readonly",
-            width=10
+        ttk.Label(filters, text=self.t("status")).pack(side=tk.LEFT)
+        self.status_filter_var = tk.StringVar(value=self.t(STATUS_KEYS[0]))
+        status_values = [self.t(key) for key in STATUS_KEYS]
+        self.widgets["status_filter"] = ttk.Combobox(
+            filters, textvariable=self.status_filter_var, values=status_values, state="readonly", width=10
         )
-        self.widgets["filter"].pack(side=tk.LEFT, padx=(5, 0))
-        self.widgets["filter"].bind("<<ComboboxSelected>>", self._on_filter_change)
+        self.widgets["status_filter"].pack(side=tk.LEFT, padx=(4, 10))
+        self.widgets["status_filter"].bind("<<ComboboxSelected>>", lambda _: self._load_tree())
 
-        # 时间筛选下拉框
-        ttk.Label(toolbar, text="时间:").pack(side=tk.LEFT, padx=(10, 0))
-        self.time_filter_var = tk.StringVar(value=self._t("filter_all"))
+        ttk.Label(filters, text=self.t("time")).pack(side=tk.LEFT)
+        self.time_filter_var = tk.StringVar(value=self.t(TIME_KEYS[0]))
+        time_values = [self.t(key) for key in TIME_KEYS]
         self.widgets["time_filter"] = ttk.Combobox(
-            toolbar,
-            textvariable=self.time_filter_var,
-            values=[self._t("filter_all"), self._t("time_today"), self._t("time_week"), self._t("time_month")],
-            state="readonly",
-            width=8
+            filters, textvariable=self.time_filter_var, values=time_values, state="readonly", width=10
         )
-        self.widgets["time_filter"].pack(side=tk.LEFT, padx=(5, 0))
-        self.widgets["time_filter"].bind("<<ComboboxSelected>>", self._on_filter_change)
+        self.widgets["time_filter"].pack(side=tk.LEFT, padx=4)
+        self.widgets["time_filter"].bind("<<ComboboxSelected>>", lambda _: self._load_tree())
 
-        # 状态栏
-        self.status_var = tk.StringVar(value=self._t("status_ready"))
-        self.widgets["status"] = ttk.Label(toolbar, textvariable=self.status_var)
-        self.widgets["status"].pack(side=tk.RIGHT)
-
-        # 数据库信息
-        self.widgets["info_frame"] = ttk.LabelFrame(main_frame, text=self._t("db_info_title"), padding="5")
-        self.widgets["info_frame"].pack(fill=tk.X, pady=(0, 10))
-
-        self.db_info_var = tk.StringVar(value=self._t("db_info_empty"))
-        self.widgets["db_info"] = ttk.Label(self.widgets["info_frame"], textvariable=self.db_info_var)
-        self.widgets["db_info"].pack(anchor=tk.W)
-
-        # 主内容区域 - 使用 PanedWindow
-        paned = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        paned = ttk.PanedWindow(main, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
+        left = ttk.LabelFrame(paned, text=self.t("sessions"), padding=5)
+        right = ttk.LabelFrame(paned, text=self.t("detail"), padding=5)
+        self.widgets["left_frame"] = left
+        self.widgets["right_frame"] = right
+        paned.add(left, weight=3)
+        paned.add(right, weight=2)
 
-        # 左侧 - 会话列表
-        self.widgets["left_frame"] = ttk.LabelFrame(paned, text=self._t("session_list_title"), padding="5")
-        paned.add(self.widgets["left_frame"], weight=2)
-
-        # 会话列表树
-        tree_frame = ttk.Frame(self.widgets["left_frame"])
+        tree_frame = ttk.Frame(left)
         tree_frame.pack(fill=tk.BOTH, expand=True)
-
         self.tree = ttk.Treeview(tree_frame, show="tree", selectmode="extended")
-        tree_scrollbar_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        tree_scrollbar_x = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
-        self.tree.configure(yscrollcommand=tree_scrollbar_y.set, xscrollcommand=tree_scrollbar_x.set)
-
+        yscroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        xscroll = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
-        tree_scrollbar_y.grid(row=0, column=1, sticky="ns")
-        tree_scrollbar_x.grid(row=1, column=0, sticky="ew")
-
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
-
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
-        # 列表操作按钮
-        btn_frame = ttk.Frame(self.widgets["left_frame"])
-        btn_frame.pack(fill=tk.X, pady=(5, 0))
+        buttons = ttk.Frame(left)
+        buttons.pack(fill=tk.X, pady=(5, 0))
+        self.widgets["btn_select_all"] = ttk.Button(buttons, text=self.t("select_all"), command=self._select_all)
+        self.widgets["btn_select_all"].pack(side=tk.LEFT, padx=(0, 4))
+        self.widgets["btn_deselect_all"] = ttk.Button(buttons, text=self.t("deselect_all"), command=self._deselect_all)
+        self.widgets["btn_deselect_all"].pack(side=tk.LEFT)
+        self.widgets["btn_delete"] = ttk.Button(buttons, text=self.t("delete_selected"), command=self._delete_selected)
+        self.widgets["btn_delete"].pack(side=tk.RIGHT)
 
-        self.widgets["btn_select_all"] = ttk.Button(btn_frame, text=self._t("select_all"), command=self._select_all)
-        self.widgets["btn_select_all"].pack(side=tk.LEFT, padx=(0, 5))
-
-        self.widgets["btn_deselect_all"] = ttk.Button(btn_frame, text=self._t("deselect_all"), command=self._deselect_all)
-        self.widgets["btn_deselect_all"].pack(side=tk.LEFT, padx=(0, 5))
-
-        self.widgets["btn_delete_selected"] = ttk.Button(btn_frame, text=self._t("delete_selected"), command=self._delete_selected)
-        self.widgets["btn_delete_selected"].pack(side=tk.RIGHT)
-
-        # 右侧 - 详情预览
-        self.widgets["right_frame"] = ttk.LabelFrame(paned, text=self._t("session_detail_title"), padding="5")
-        paned.add(self.widgets["right_frame"], weight=1)
-
-        self.detail_text = tk.Text(self.widgets["right_frame"], wrap=tk.WORD, state=tk.DISABLED)
-        detail_scrollbar = ttk.Scrollbar(self.widgets["right_frame"], orient=tk.VERTICAL, command=self.detail_text.yview)
-        self.detail_text.configure(yscrollcommand=detail_scrollbar.set)
-
+        self.detail_text = tk.Text(right, wrap=tk.WORD, state=tk.DISABLED)
+        detail_scroll = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.detail_text.yview)
+        self.detail_text.configure(yscrollcommand=detail_scroll.set)
         self.detail_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        detail_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        detail_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def _switch_language(self):
-        """切换语言"""
+    def _switch_language(self) -> None:
         self.lang = "en" if self.lang == "zh" else "zh"
-        self._ = TRANSLATIONS[self.lang]
-        self._update_ui_text()
-
-    def _open_archive_manager(self):
-        """打开归档管理器"""
-        # 查找 drafts.sqlite
-        archive_db = None
-        possible_paths = [
-            Path(os.environ.get("APPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "ai.opencode.desktop" / "drafts.sqlite",
-        ]
-        for path in possible_paths:
-            if path.exists():
-                archive_db = path
-                break
-
-        if not archive_db:
-            messagebox.showwarning(self._t("db_not_found_title"), "未找到归档数据库 (drafts.sqlite)")
-            return
-
-        # 打开归档管理窗口
-        ArchiveManagerWindow(self.root, archive_db, self.lang)
-
-    def _update_ui_text(self):
-        """更新所有 UI 文本"""
-        self.root.title(self._t("window_title"))
-
-        # 工具栏按钮
-        self.widgets["btn_refresh"].configure(text=self._t("refresh"))
-        self.widgets["btn_select_db"].configure(text=self._t("select_db"))
-        self.widgets["btn_vacuum"].configure(text=self._t("vacuum"))
-        self.widgets["btn_archive"].configure(text=self._t("archive"))
-        self.widgets["btn_import"].configure(text=self._t("import_archive"))
-        self.widgets["btn_lang"].configure(text=self._t("lang_switch"))
-        self.widgets["btn_archive_manager"].configure(text=self._t("archive_manager"))
-
-        # 标签框
-        self.widgets["info_frame"].configure(text=self._t("db_info_title"))
-        self.widgets["left_frame"].configure(text=self._t("session_list_title"))
-        self.widgets["right_frame"].configure(text=self._t("session_detail_title"))
-
-        # 底部按钮
-        self.widgets["btn_select_all"].configure(text=self._t("select_all"))
-        self.widgets["btn_deselect_all"].configure(text=self._t("deselect_all"))
-        self.widgets["btn_delete_selected"].configure(text=self._t("delete_selected"))
-
-        # 筛选下拉框
-        self.widgets["filter"].configure(values=[self._t("filter_all"), self._t("filter_nonempty"), self._t("filter_empty")])
-        self.filter_var.set(self._t("filter_all"))
-
-        # 刷新树
+        self._update_texts()
         self._load_tree()
 
-    def _select_database(self):
-        """手动选择数据库文件"""
+    def _update_texts(self) -> None:
+        self.root.title(self.t("window_title"))
+        labels = {
+            "btn_lang": "language", "btn_refresh": "refresh", "btn_select_db": "select_db",
+            "btn_vacuum": "vacuum", "btn_export": "export", "btn_import": "import",
+            "btn_archived": "delete_archived", "btn_archive_manager": "archive_manager",
+            "btn_select_all": "select_all", "btn_deselect_all": "deselect_all",
+            "btn_delete": "delete_selected",
+        }
+        for name, key in labels.items():
+            self.widgets[name].configure(text=self.t(key))
+        self.widgets["info_frame"].configure(text=self.t("db_info"))
+        self.widgets["left_frame"].configure(text=self.t("sessions"))
+        self.widgets["right_frame"].configure(text=self.t("detail"))
+        self.widgets["status_filter"].configure(values=[self.t(key) for key in STATUS_KEYS])
+        self.widgets["time_filter"].configure(values=[self.t(key) for key in TIME_KEYS])
+        self.status_filter_var.set(self.t(STATUS_KEYS[0]))
+        self.time_filter_var.set(self.t(TIME_KEYS[0]))
+        if self.conn and self.db_path:
+            summary = core.get_database_summary(self.conn, self.db_path)
+            self.db_info_var.set(self._format_summary(summary))
+
+    def _format_summary(self, summary: dict) -> str:
+        counts = summary["counts"]
+        return (
+            f"{self.t('path')}: {summary['path']}\n"
+            f"{self.t('size')}: {core.format_size(summary['size_bytes'])}  |  "
+            f"{self.t('v2')}: {counts.get(core.V2_TABLE, 0)}  |  "
+            f"{self.t('v1')}: {counts.get(core.V1_TABLE, 0)}  |  "
+            f"{self.t('archived_count')}: {summary['archived']}  |  "
+            f"{self.t('legacy_records')}: {counts.get(core.LEGACY_TABLE, 0)}"
+        )
+
+    def _select_database(self) -> None:
         path = filedialog.askopenfilename(
-            title=self._t("select_db_title"),
-            filetypes=self._t("db_types")
+            title=self.t("select_db"),
+            filetypes=[("SQLite", "*.db *.sqlite"), ("All files", "*.*")],
         )
         if path:
             self.db_path = Path(path)
             self._load_data()
 
-    def _load_data(self):
-        """加载会话数据"""
-        if not self.db_path or not self.db_path.exists():
-            self.status_var.set(self._t("db_not_found_title"))
-            self.db_info_var.set(self._t("db_not_found_msg"))
+    def _load_data(self) -> None:
+        if not self.db_path or not self.db_path.is_file():
+            self.status_var.set(self.t("no_db"))
+            self.db_info_var.set(self.t("no_db"))
             return
-
         try:
-            # 关闭旧连接
             if self.conn:
                 self.conn.close()
-
-            # 打开新连接
-            self.conn = sqlite3.connect(str(self.db_path))
-            self.conn.row_factory = sqlite3.Row
-
-            # 获取数据库信息
-            cursor = self.conn.cursor()
-
-            # 检查是新数据库还是旧数据库
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
-            is_new_db = cursor.fetchone() is not None
-
-            if is_new_db:
-                # 新数据库（opencode.db）
-                cursor.execute("SELECT COUNT(*) FROM session")
-                total_count = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM session WHERE time_archived IS NULL")
-                active_count = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM session WHERE time_archived IS NOT NULL")
-                archived_count = cursor.fetchone()[0]
-
-                db_info = (
-                    f"{'路径' if self.lang == 'zh' else 'Path'}: {self.db_path}\n"
-                    f"{'大小' if self.lang == 'zh' else 'Size'}: {self._format_size(self.db_path.stat().st_size)}\n"
-                    f"{'总会话' if self.lang == 'zh' else 'Total'}: {total_count} | "
-                    f"{'活跃' if self.lang == 'zh' else 'Active'}: {active_count} | "
-                    f"{'已归档' if self.lang == 'zh' else 'Archived'}: {archived_count}"
-                )
-            else:
-                # 旧数据库（drafts.sqlite）
-                cursor.execute("SELECT COUNT(*) FROM document")
-                total_count = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:draft:%'")
-                draft_count = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM document WHERE key LIKE '%:session:%'")
-                session_count = cursor.fetchone()[0]
-
-                db_info = (
-                    f"{'路径' if self.lang == 'zh' else 'Path'}: {self.db_path}\n"
-                    f"{'大小' if self.lang == 'zh' else 'Size'}: {self._format_size(self.db_path.stat().st_size)}\n"
-                    f"{'总记录' if self.lang == 'zh' else 'Total'}: {total_count} | "
-                    f"{self._t('drafts')}: {draft_count} | "
-                    f"{'会话' if self.lang == 'zh' else 'Sessions'}: {session_count}"
-                )
-
-            self.db_info_var.set(db_info)
-
-            # 加载会话树
+            self.conn = core.connect(self.db_path)
+            summary = core.get_database_summary(self.conn, self.db_path)
+            self.db_info_var.set(self._format_summary(summary))
             self._load_tree()
+            self.status_var.set(self.t("loaded", len(self.sessions)))
+        except Exception as exc:
+            self.status_var.set(self.t("load_failed"))
+            messagebox.showerror(self.t("load_failed"), str(exc))
 
-            self.status_var.set(self._t("records_loaded", total_count))
-
-        except Exception as e:
-            messagebox.showerror(self._t("db_load_error"), f"{self._t('db_load_error')}:\n{str(e)}")
-            self.status_var.set(self._t("load_failed"))
-
-    def _on_filter_change(self, event=None):
-        """筛选条件改变"""
-        self._load_tree()
-
-    def _is_empty_session(self, value: str) -> bool:
-        """检查会话是否为空"""
-        try:
-            data = json.loads(value)
-            if "prompt" in data:
-                prompt_parts = data["prompt"]
-                if isinstance(prompt_parts, list):
-                    for part in prompt_parts:
-                        if isinstance(part, dict) and "content" in part:
-                            content = part["content"]
-                            if content and content.strip():
-                                return False
-                    return True
-            return True
-        except:
-            return True
-
-    def _load_tree(self):
-        """加载会话树"""
-        # 清空树
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
+    def _load_tree(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        self.sessions = []
         if not self.conn:
             return
+        status_label = self.status_filter_var.get()
+        time_label = self.time_filter_var.get()
+        status_key = STATUS_KEYS[status_label] if status_label in [self.t(k) for k in STATUS_KEYS] else "status_all"
+        time_key = TIME_KEYS[time_label] if time_label in [self.t(k) for k in TIME_KEYS] else "time_all"
+        status = {"status_all": "all", "status_active": "active", "status_archived": "archived"}[status_key]
+        time_range = {"time_all": "all", "time_today": "today", "time_7d": "7d", "time_30d": "30d"}[time_key]
 
-        # 获取筛选条件
-        filter_value = self.filter_var.get() if hasattr(self, 'filter_var') else self._t("filter_all")
-        time_filter = self.time_filter_var.get() if hasattr(self, 'time_filter_var') else self._t("filter_all")
-
-        # 计算时间阈值
-        now = datetime.now()
-        time_threshold = None
-        if time_filter == self._t("time_today"):
-            time_threshold = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif time_filter == self._t("time_week"):
-            time_threshold = now - __import__('datetime').timedelta(days=7)
-        elif time_filter == self._t("time_month"):
-            time_threshold = now - __import__('datetime').timedelta(days=30)
-
-        cursor = self.conn.cursor()
-
-        # 检查是新数据库还是旧数据库
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
-        is_new_db = cursor.fetchone() is not None
-
-        if is_new_db:
-            self._load_tree_new_db(cursor, filter_value, time_threshold, now)
-        else:
-            self._load_tree_old_db(cursor, filter_value, time_threshold)
-
-    def _load_tree_new_db(self, cursor, filter_value, time_threshold, now):
-        """加载新数据库的会话树"""
-        # 获取所有会话
-        cursor.execute("""
-            SELECT id, title, directory, 
-                   datetime(time_created/1000, 'unixepoch', 'localtime') as created,
-                   datetime(time_updated/1000, 'unixepoch', 'localtime') as updated,
-                   time_created, time_updated, time_archived,
-                   cost, tokens_input, tokens_output
-            FROM session 
-            ORDER BY time_updated DESC
-        """)
-        sessions = cursor.fetchall()
-
-        # 按项目分组
-        projects = {}
-        for session in sessions:
-            # 应用时间筛选
-            if time_threshold:
-                session_time = datetime.fromtimestamp(session["time_updated"] / 1000)
-                if session_time < time_threshold:
-                    continue
-
-            # 应用归档筛选
-            if filter_value == self._t("filter_empty"):
-                if session["time_archived"] is None:
-                    continue
-            elif filter_value == self._t("filter_nonempty"):
-                if session["time_archived"] is not None:
-                    continue
-
-            project_id = session["directory"] or "unknown"
-            if project_id not in projects:
-                projects[project_id] = []
-            projects[project_id].append(session)
-
-        # 添加会话节点
-        for project_dir, sessions in sorted(projects.items()):
-            # 简化项目目录显示
-            display_name = project_dir.split("\\")[-1] if "\\" in project_dir else project_dir
-            if len(display_name) > 30:
-                display_name = "..." + display_name[-27:]
-
-            # 计算项目时间
-            latest_time = max(s["time_updated"] for s in sessions)
-            time_str = datetime.fromtimestamp(latest_time / 1000).strftime("%m/%d %H:%M")
-
-            ws_node = self.tree.insert("", tk.END, text=f"📁 {display_name} ({len(sessions)}) [{time_str}]", open=False)
-
-            for session in sessions:
-                title = session["title"] or "(untitled)"
-                time_updated = datetime.fromtimestamp(session["time_updated"] / 1000).strftime("%m/%d %H:%M")
-                preview = f"[{time_updated}] {title[:40]}"
-
-                # 存储完整会话信息
-                session_data = json.dumps({
-                    "id": session["id"],
-                    "title": session["title"],
-                    "directory": session["directory"],
-                    "created": session["created"],
-                    "updated": session["updated"],
-                    "cost": session["cost"],
-                    "tokens": session["tokens_input"] + session["tokens_output"]
-                })
-                self.tree.insert(ws_node, tk.END, text=preview, values=(session["id"], session_data))
-
-    def _load_tree_old_db(self, cursor, filter_value, time_threshold):
-        """加载旧数据库的会话树"""
-        # 获取工作区时间
-        workspace_times = self._get_workspace_times()
-
-        cursor.execute("SELECT key, value FROM document ORDER BY key")
-        rows = cursor.fetchall()
-
-        # 按类型和工作区分组
-        drafts = []
-        workspaces = {}
-        global_data = []
-
-        for row in rows:
-            key = row["key"]
-            value = row["value"]
-
-            # 应用内容筛选
-            if filter_value == self._t("filter_nonempty"):
-                if ":draft:" in key or ":session:" in key:
-                    if self._is_empty_session(value):
-                        continue
-            elif filter_value == self._t("filter_empty"):
-                if ":draft:" in key or ":session:" in key:
-                    if not self._is_empty_session(value):
-                        continue
-
-            if ":draft:" in key:
-                drafts.append((key, value))
-            elif ":session:" in key:
-                # 解析工作区
-                parts = key.split(":")
-                if len(parts) >= 2:
-                    ws_name = parts[0]
-
-                    # 应用时间筛选
-                    if time_threshold:
-                        ws_time = workspace_times.get(ws_name)
-                        if ws_time and ws_time < time_threshold:
-                            continue
-
-                    if ws_name not in workspaces:
-                        workspaces[ws_name] = []
-                    workspaces[ws_name].append((key, value))
-            elif "prompt-history" in key:
-                global_data.append((key, value))
-
-        # 添加草稿节点
-        if drafts:
-            draft_node = self.tree.insert("", tk.END, text=f"📝 {self._t('drafts')} ({len(drafts)})", open=True)
-            for key, value in drafts:
-                preview = self._extract_preview(value)
-                self.tree.insert(draft_node, tk.END, text=preview, values=(key, value))
-
-        # 添加工作区会话节点
-        for ws_name, sessions in sorted(workspaces.items()):
-            display_name = self._decode_workspace_name(ws_name)
-            ws_time = workspace_times.get(ws_name)
-            time_str = ws_time.strftime("%m/%d %H:%M") if ws_time else ""
-            ws_node = self.tree.insert("", tk.END, text=f"📁 {display_name} ({len(sessions)}) [{time_str}]", open=False)
-            for key, value in sessions:
-                preview = self._extract_preview(value)
-                self.tree.insert(ws_node, tk.END, text=preview, values=(key, value))
-
-        # 添加全局历史节点
-        if global_data:
-            global_node = self.tree.insert("", tk.END, text=f"🌐 {self._t('global_history')}", open=False)
-            for key, value in global_data:
-                self.tree.insert(global_node, tk.END, text=self._t("prompt_history"), values=(key, value))
-
-    def _extract_preview(self, value: str) -> str:
-        """从值中提取预览文本"""
         try:
-            data = json.loads(value)
-            if "prompt" in data:
-                prompt_parts = data["prompt"]
-                if isinstance(prompt_parts, list):
-                    for part in prompt_parts:
-                        if isinstance(part, dict) and "content" in part:
-                            content = part["content"]
-                            if content:
-                                # 截取前50个字符
-                                return content[:50] + ("..." if len(content) > 50 else "")
-            return self._t("empty")
-        except:
-            return self._t("parse_error")
+            self.sessions = core.list_sessions(
+                self.conn, status=status, time_range=time_range, search=self.search_var.get()
+            )
+        except Exception as exc:
+            messagebox.showerror(self.t("load_failed"), str(exc))
+            return
 
-    def _decode_workspace_name(self, encoded_name: str) -> str:
-        """解码工作区名称"""
-        try:
-            prefix = "opencode.workspace."
-            suffix = ".dat"
-            if encoded_name.startswith(prefix):
-                encoded_name = encoded_name[len(prefix):]
-            if encoded_name.endswith(suffix):
-                encoded_name = encoded_name[:-len(suffix)]
+        groups: Dict[str, List[core.SessionInfo]] = {}
+        for session in self.sessions:
+            key = session.directory or session.project_id or "(unknown)"
+            groups.setdefault(key, []).append(session)
 
-            parts = encoded_name.rsplit(".", 1)
-            if len(parts) == 2 and len(parts[1]) >= 6:
-                encoded_name = parts[0]
+        for directory, items in sorted(groups.items()):
+            short = Path(directory.replace("\\", "/")).name or directory
+            latest = max(item.time_updated for item in items)
+            stamp = datetime.fromtimestamp(latest / 1000).strftime("%m/%d %H:%M")
+            group_node = self.tree.insert("", tk.END, text=f"{short} ({len(items)}) [{stamp}]", open=False)
+            for item in items:
+                updated = datetime.fromtimestamp(item.time_updated / 1000).strftime("%m/%d %H:%M")
+                badge = "v2" if item.ref.table == core.V2_TABLE else "v1"
+                flag = " [A]" if item.is_archived else ""
+                label = f"[{badge}][{updated}] {item.title[:44]}{flag}"
+                self.tree.insert(group_node, tk.END, text=label, values=(item.ref.key, json.dumps(item.as_dict(), ensure_ascii=False)))
+        self.status_var.set(self.t("loaded", len(self.sessions)))
 
-            decoded = encoded_name.replace("--", ":")
-            decoded = decoded.replace("-", "\\")
-
-            if "\\" in decoded or ":" in decoded:
-                return decoded
-
-            return encoded_name
-        except:
-            return encoded_name
-
-    def _on_select(self, event):
-        """树选择事件"""
+    def _on_select(self, _event=None) -> None:
         selected = self.tree.selection()
         if not selected:
             return
-
-        item = selected[0]
-        values = self.tree.item(item, "values")
-
-        if values and len(values) >= 2:
-            key, value = values[0], values[1]
-            self._show_detail(key, value)
-
-    def _show_detail(self, key: str, value: str):
-        """显示详情"""
+        values = self.tree.item(selected[0], "values")
+        if not values or not values[1]:
+            return
+        data = json.loads(values[1])
+        lines = [f"{self.t('title')}: {data['title']}", f"{self.t('id')}: {data['id']}"]
+        for key, label in (
+            ("table", "schema"), ("version", "version"), ("directory", "directory"),
+            ("message_count", "messages"), ("tokens_total", "tokens"), ("cost", "cost"),
+        ):
+            lines.append(f"{self.t(label)}: {data.get(key, '')}")
+        for key, label in (("time_created", "created"), ("time_updated", "updated")):
+            value = data.get(key) or 0
+            try:
+                lines.append(f"{self.t(label)}: {datetime.fromtimestamp(value / 1000).strftime('%Y-%m-%d %H:%M:%S')}")
+            except (ValueError, OSError, OverflowError):
+                pass
         self.detail_text.configure(state=tk.NORMAL)
-        self.detail_text.delete(1.0, tk.END)
-
-        # 显示键
-        self.detail_text.insert(tk.END, self._t("key_header") + "\n", "header")
-        self.detail_text.insert(tk.END, f"{key}\n\n")
-
-        # 尝试格式化 JSON
-        try:
-            data = json.loads(value)
-            formatted = json.dumps(data, indent=2, ensure_ascii=False)
-            self.detail_text.insert(tk.END, self._t("content_header_json") + "\n", "header")
-            self.detail_text.insert(tk.END, formatted)
-        except:
-            self.detail_text.insert(tk.END, self._t("content_header") + "\n", "header")
-            self.detail_text.insert(tk.END, value)
-
+        self.detail_text.delete("1.0", tk.END)
+        self.detail_text.insert(tk.END, "\n".join(lines))
         self.detail_text.configure(state=tk.DISABLED)
 
-    def _select_all(self):
-        """全选"""
-        for item in self._get_all_leaves():
-            self.tree.item(item, tags=("selected",))
-            self.tree.selection_add(item)
+    def _selected_refs(self) -> List[core.SessionRef]:
+        refs = []
+        for item in self.tree.selection():
+            values = self.tree.item(item, "values")
+            if not values:
+                continue
+            try:
+                refs.append(core.SessionRef.parse(values[0]))
+            except ValueError:
+                continue
+        return refs
 
-    def _deselect_all(self):
-        """取消全选"""
+    def _select_all(self) -> None:
+        self.tree.selection_add(*[leaf for leaf in self._leaves()])
+
+    def _deselect_all(self) -> None:
         self.tree.selection_remove(*self.tree.selection())
 
-    def _get_all_leaves(self):
-        """获取所有叶子节点"""
-        leaves = []
-        for item in self.tree.get_children():
-            children = self.tree.get_children(item)
-            if children:
-                leaves.extend(self._get_all_leaves_from(item))
-            else:
-                leaves.append(item)
-        return leaves
+    def _leaves(self):
+        for group in self.tree.get_children():
+            for leaf in self.tree.get_children(group):
+                yield leaf
 
-    def _get_all_leaves_from(self, parent):
-        """从指定节点获取所有叶子"""
-        leaves = []
-        children = self.tree.get_children(parent)
-        if not children:
-            return [parent]
-        for child in children:
-            leaves.extend(self._get_all_leaves_from(child))
-        return leaves
-
-    def _delete_selected(self):
-        """删除选中的会话"""
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning(self._t("confirm_delete_title"), self._t("no_selection_warning"))
+    def _delete_selected(self) -> None:
+        refs = self._selected_refs()
+        if not refs:
+            messagebox.showwarning(self.t("confirm_delete"), self.t("no_selection"))
             return
-
-        # 收集要删除的键
-        keys_to_delete = []
-        for item in selected:
-            values = self.tree.item(item, "values")
-            if values and len(values) >= 1:
-                keys_to_delete.append(values[0])
-
-        if not keys_to_delete:
+        if not messagebox.askyesno(self.t("confirm_delete"), self.t("confirm_delete_msg", len(refs))):
             return
-
-        # 确认删除
-        count = len(keys_to_delete)
-        if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_msg", count)):
-            return
-
         try:
-            cursor = self.conn.cursor()
-
-            # 检查是新数据库还是旧数据库
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
-            is_new_db = cursor.fetchone() is not None
-
-            if is_new_db:
-                # 新数据库：删除会话（级联删除消息）
-                placeholders = ",".join(["?"] * len(keys_to_delete))
-                cursor.execute(f"DELETE FROM session WHERE id IN ({placeholders})", keys_to_delete)
-            else:
-                # 旧数据库：删除 document 记录
-                placeholders = ",".join(["?"] * len(keys_to_delete))
-                cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", keys_to_delete)
-
-            self.conn.commit()
-            self.status_var.set(self._t("deleted_records", count))
+            count = core.delete_sessions(self.conn, refs)
+            self.status_var.set(self.t("deleted", count))
             self._load_data()
+        except Exception as exc:
+            messagebox.showerror(self.t("error"), str(exc))
 
-        except Exception as e:
-            messagebox.showerror(self._t("delete_error"), f"{self._t('delete_error')}:\n{str(e)}")
-
-    def _delete_empty_sessions(self):
-        """一键删除空会话"""
-        if not self.conn:
-            messagebox.showwarning(self._t("confirm_delete_title"), self._t("no_db_warning"))
+    def _delete_archived(self) -> None:
+        archived = [session for session in self.sessions if session.is_archived]
+        if not archived:
+            messagebox.showinfo(self.t("delete_archived"), self.t("no_archived"))
             return
-
+        if not messagebox.askyesno(self.t("confirm_delete"), self.t("confirm_archived_msg", len(archived))):
+            return
         try:
-            cursor = self.conn.cursor()
-
-            # 检查是新数据库还是旧数据库
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session'")
-            is_new_db = cursor.fetchone() is not None
-
-            if is_new_db:
-                # 新数据库：删除已归档的会话
-                cursor.execute("SELECT id FROM session WHERE time_archived IS NOT NULL")
-                archived_ids = [row["id"] for row in cursor.fetchall()]
-
-                if not archived_ids:
-                    messagebox.showinfo(self._t("confirm_delete_title"), self._t("no_empty_sessions"))
-                    return
-
-                count = len(archived_ids)
-                if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_empty_msg", count)):
-                    return
-
-                placeholders = ",".join(["?"] * len(archived_ids))
-                cursor.execute(f"DELETE FROM session WHERE id IN ({placeholders})", archived_ids)
-            else:
-                # 旧数据库：删除空会话
-                cursor.execute("SELECT key, value FROM document")
-                rows = cursor.fetchall()
-
-                empty_keys = []
-                for row in rows:
-                    key = row["key"]
-                    value = row["value"]
-
-                    # 只处理草稿和会话
-                    if ":draft:" not in key and ":session:" not in key:
-                        continue
-
-                    # 检查是否为空
-                    if self._is_empty_session(value):
-                        empty_keys.append(key)
-
-                if not empty_keys:
-                    messagebox.showinfo(self._t("confirm_delete_title"), self._t("no_empty_sessions"))
-                    return
-
-                count = len(empty_keys)
-                if not messagebox.askyesno(self._t("confirm_delete_title"), self._t("confirm_delete_empty_msg", count)):
-                    return
-
-                placeholders = ",".join(["?"] * len(empty_keys))
-                cursor.execute(f"DELETE FROM document WHERE key IN ({placeholders})", empty_keys)
-
-            self.conn.commit()
-            self.status_var.set(self._t("deleted_empty_sessions", count))
+            count = core.delete_archived(self.conn)
+            self.status_var.set(self.t("deleted", count))
             self._load_data()
+        except Exception as exc:
+            messagebox.showerror(self.t("error"), str(exc))
 
-        except Exception as e:
-            messagebox.showerror(self._t("delete_empty_error"), f"{self._t('delete_empty_error')}:\n{str(e)}")
-
-    def _archive_selected(self):
-        """存档选中的会话"""
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning(self._t("confirm_delete_title"), self._t("no_selection_archive_warning"))
+    def _export(self) -> None:
+        refs = self._selected_refs()
+        if not refs:
+            messagebox.showwarning(self.t("export"), self.t("no_selection"))
             return
-
-        # 收集要存档的数据
-        archive_data = []
-        for item in selected:
-            values = self.tree.item(item, "values")
-            if values and len(values) >= 2:
-                archive_data.append({"key": values[0], "value": values[1]})
-
-        if not archive_data:
-            return
-
-        # 选择保存位置
-        default_name = self._t("archive_default_name", datetime.now().strftime('%Y%m%d_%H%M%S'))
-        save_path = filedialog.asksaveasfilename(
-            title=self._t("save_archive_title"),
-            defaultextension=".json",
-            filetypes=self._t("archive_types"),
-            initialfile=default_name
+        path = filedialog.asksaveasfilename(
+            title=self.t("save_archive"), defaultextension=".json",
+            filetypes=[("JSON", "*.json")],
+            initialfile=f"opencode_sessions_{datetime.now():%Y%m%d_%H%M%S}.json",
         )
-
-        if not save_path:
+        if not path:
             return
-
         try:
-            archive = {
-                "version": 1,
-                "created_at": datetime.now().isoformat(),
-                "source": str(self.db_path),
-                "records": archive_data
-            }
+            payload = core.export_sessions(self.conn, refs)
+            payload["source"] = str(self.db_path)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+            self.status_var.set(self.t("archive_saved", len(payload["sessions"])))
+        except Exception as exc:
+            messagebox.showerror(self.t("archive_failed"), str(exc))
 
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(archive, f, indent=2, ensure_ascii=False)
-
-            self.status_var.set(self._t("archive_saved", len(archive_data), save_path))
-            messagebox.showinfo(self._t("archive_success"), self._t("archive_success", len(archive_data)))
-
-        except Exception as e:
-            messagebox.showerror(self._t("archive_error"), f"{self._t('archive_error')}:\n{str(e)}")
-
-    def _import_archive(self):
-        """导入存档"""
-        # 选择存档文件
-        file_path = filedialog.askopenfilename(
-            title=self._t("select_archive_title"),
-            filetypes=self._t("archive_types")
-        )
-
-        if not file_path:
+    def _import(self) -> None:
+        path = filedialog.askopenfilename(title=self.t("select_archive"), filetypes=[("JSON", "*.json")])
+        if not path:
             return
-
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                archive = json.load(f)
-
-            if "records" not in archive:
-                messagebox.showerror(self._t("import_error"), self._t("invalid_archive"))
-                return
-
-            records = archive["records"]
-            count = len(records)
-
-            # 确认导入
-            if not messagebox.askyesno(self._t("confirm_import_title"), self._t("confirm_import_msg", count)):
-                return
-
-            # 导入记录
-            cursor = self.conn.cursor()
-            for record in records:
-                cursor.execute(
-                    "INSERT OR REPLACE INTO document (key, value) VALUES (?, ?)",
-                    (record["key"], record["value"])
-                )
-            self.conn.commit()
-
-            self.status_var.set(self._t("imported_records", count))
-            self._load_data()
-
-        except Exception as e:
-            messagebox.showerror(self._t("import_error"), f"{self._t('import_error')}:\n{str(e)}")
-
-    def _vacuum_database(self):
-        """压缩数据库"""
-        if not self.conn:
-            messagebox.showwarning(self._t("confirm_vacuum_title"), self._t("no_db_warning"))
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, dict):
+                raise ValueError(self.t("invalid_archive"))
+        except Exception as exc:
+            messagebox.showerror(self.t("import_failed"), str(exc))
             return
-
-        if not messagebox.askyesno(self._t("confirm_vacuum_title"), self._t("confirm_vacuum_msg")):
+        if not messagebox.askyesno(self.t("confirm_import"), self.t("confirm_import_msg")):
             return
-
         try:
-            self.status_var.set(self._t("vacuuming"))
-            self.root.update()
-
-            # 获取压缩前大小
-            size_before = self.db_path.stat().st_size
-
-            # 执行 VACUUM
-            self.conn.execute("VACUUM")
-
-            # 获取压缩后大小
-            size_after = self.db_path.stat().st_size
-
-            saved = size_before - size_after
-            self.status_var.set(f"{self._t('vacuum_complete')} - {self._t('vacuum_saved', self._format_size(saved))}")
-            messagebox.showinfo(
-                self._t("vacuum_complete"),
-                f"{self._t('vacuum_complete')}\n\n"
-                f"{self._t('vacuum_before', self._format_size(size_before))}\n"
-                f"{self._t('vacuum_after', self._format_size(size_after))}\n"
-                f"{self._t('vacuum_saved', self._format_size(saved))}"
+            result = core.import_archive(self.conn, payload)
+            self.status_var.set(
+                self.t("import_done", result["sessions"], result["messages"], result["parts"], result["records"])
             )
-
             self._load_data()
+        except Exception as exc:
+            messagebox.showerror(self.t("import_failed"), str(exc))
 
-        except Exception as e:
-            messagebox.showerror(self._t("vacuum_error"), f"{self._t('vacuum_error')}:\n{str(e)}")
+    def _vacuum(self) -> None:
+        if not messagebox.askyesno(self.t("confirm_vacuum"), self.t("confirm_vacuum_msg")):
+            return
+        try:
+            before = core.format_size(self.db_path.stat().st_size)
+            core.vacuum_database(self.conn)
+            after = core.format_size(self.db_path.stat().st_size)
+            self.status_var.set(f"{self.t('vacuum_done')} {before} -> {after}")
+            self._load_data()
+        except Exception as exc:
+            messagebox.showerror(self.t("vacuum_failed"), str(exc))
 
-    def _format_size(self, size_bytes: int) -> str:
-        """格式化文件大小"""
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size_bytes < 1024:
-                return f"{size_bytes:.2f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.2f} TB"
+    def _open_archive_manager(self) -> None:
+        path = core.find_archive_database()
+        if not path:
+            messagebox.showwarning(self.t("archive_manager"), self.t("archive_db_missing"))
+            return
+        ArchiveManagerWindow(self.root, path, self.lang)
 
-    def run(self):
-        """运行应用"""
+    def run(self) -> None:
         self.root.mainloop()
-
-        # 关闭数据库连接
         if self.conn:
             self.conn.close()
 
 
-def main():
-    app = OpenCodeSessionManager()
-    app.run()
+def main() -> None:
+    OpenCodeSessionManager().run()
 
 
 if __name__ == "__main__":

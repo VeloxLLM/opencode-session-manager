@@ -1,73 +1,61 @@
 # OpenCode Session Manager 交接
 
-> 本文件是给 AI 的工作交接文档，请先阅读此文档再继续对本仓库进行操作。
+> 本文件是给 AI 的工作交接文档，请先阅读再继续操作本仓库。
 
 ## 一、还没做完的事 & 动手前注意
 
-### 尚未完成 / 待办
+### 待办
 
-- [ ] 添加多语言支持（中文/英文切换）
-- [ ] 添加会话内容编辑功能
-- [ ] 添加会话搜索功能
-- [ ] 添加批量导出功能
-- [ ] 添加数据库备份功能
-- [ ] 支持 macOS 和 Linux 路径自动检测
-- [ ] 添加深色主题支持
-- [ ] 添加会话统计信息（按时间、工作区等）
+- [ ] 用真实 OpenCode v2 桌面版数据库做一次 GUI 交互验收（当前环境只能跑核心层测试，无法打开窗口）
+- [ ] 为 Rust 版补齐导出 / 导入功能（目前仅 Python 版支持完整备份）
+- [ ] 增加按工作区的 Token / 费用汇总
+- [ ] 支持深色主题
 
-### 动手前注意事项
+### 动手前注意
 
-1. 本项目使用 Python + tkinter 开发，无需额外依赖
-2. 数据库路径在 Windows 系统下为 `%APPDATA%\ai.opencode.desktop\drafts.sqlite`
-3. 修改代码前请先了解 SQLite 数据库结构
-4. 不要修改 `.git` 目录下的文件
-5. 提交代码前请确保代码能正常运行
+1. Python 核心层在 `py/opencode_core.py`，**不依赖 GUI**；改数据逻辑优先改这里，`py/tests/test_core.py` 必须继续通过。
+2. v2 当前会话在 `session_v2`，消息在 `session_message` / `session_part`；v1 历史在 `session` / `message` / `part`。两代数据同时展示，不要只读一张表。
+3. 删除必须走 `core.delete_sessions()` / `core.delete_archived()`，它们会开启外键级联；不要手写 `DELETE FROM session`。
+4. 导入会写真实数据库；测试只用临时 fixture，不要拿 `~/.local/share/opencode/opencode.db` 做写测试。
+5. `VACUUM` 在 OpenCode 持有写锁时会失败，属于预期行为。
+6. Rust 版 `rust/src/main.rs` 目前支持 v2/v1 读取与删除，但导出/导入尚未实现。
 
-## 二、历史记录（我们做了什么、怎么做的）
+## 二、历史记录
 
 ### 2026-09-01
 
-- 初始化项目，创建基础 GUI 框架
-- 创建 `opencode_session_manager.py` 主程序
-  - 实现数据库连接和读取
-  - 实现会话列表树形显示
-  - 实现详情面板
-  - 实现删除功能
-  - 实现压缩功能（VACUUM）
-  - 实现存档功能（导出/导入 JSON）
-- 创建 `README.md` 中文文档
-- 创建 `README_EN.md` 英文文档
-- 创建 `ai.md` AI 交接文档
-- 创建 `ai_EN.md` AI 交接文档（英文版）
-- 初始化 Git 仓库，提交初始代码
+- 初始化项目，Python tkinter GUI，读取 `drafts.sqlite` 的 `document` 表。
+- 建立 README / AI 交接文档。
 
-当前仓库状态：
+### 2026-09-01 ~ 09-02
+
+- 改为读取 `opencode.db` 的 `session` 表，增加归档筛选、时间筛选、JSON 存档。
+- 增加 Rust/egui GUI；移除 TUI（README 曾残留 TUI 描述，v2.0 已清理）。
+
+### 2026-11-23 — v2.0.0
+
+- 核对本机 opencode **v2.3.0**：当前会话写入 `session_v2`，消息写入 `session_message` / `session_part`；旧 `session` 表仍有 56 条历史记录，`session_v2` 有 49 条。旧代码只读取 `session`，v2 会话完全不可见。
+- 新增 `py/opencode_core.py`：schema 自动检测、v1+v2 合并列表、筛选、外键级联删除、完整 JSON 导出/导入（含 messages/parts）、旧 `document` 归档管理。
+- 重写 `py/opencode_session_manager.py`：使用核心层，新增搜索、状态/时间筛选、详情面板、v1/v2 标识、中英文切换；支持 `OPENCODE_SESSION_MANAGER_DB` 环境变量。
+- 新增 `tests/test_core.py`，8 项无界面单元测试全部通过。
+- Rust 版同步支持 `session_v2` + `session` 双表读取与按表删除，Cargo 版本改为 2.0.0。
+- README 合并为中英双语单文件；README_EN.md 保留为入口页；新增 CHANGELOG.md 与 .gitignore。
+
+当前目录：
 
 ```text
 opencode-session-manager/
-├── opencode_session_manager.py  # 主程序
-├── README.md                    # 中文文档
-├── README_EN.md                 # 英文文档
-├── ai.md                        # AI 交接文档（中文）
-├── ai_EN.md                     # AI 交接文档（英文）
-└── .git/                        # Git 仓库
+├── README.md                 README_EN.md                 CHANGELOG.md
+├── LICENSE
+├── py/
+│   ├── opencode_core.py      opencode_session_manager.py
+│   └── tests/test_core.py
+└── rust/
+    ├── Cargo.toml            src/main.rs
 ```
 
 ## 三、为什么做这件事
 
-### 目标
+OpenCode 本身不提供会话清理界面。v2 引入新表后，旧工具会漏掉当前会话；本项目的价值在于**跨 schema 统一视图**与安全删除/备份能力，而不是替代 OpenCode 的会话功能。
 
-提供一个简单易用的 GUI 工具，帮助用户管理 opencode 的会话数据。opencode 本身没有提供会话管理功能，用户无法方便地查看、删除或备份会话记录。
-
-### 价值
-
-- **数据管理**：帮助用户清理不需要的会话，释放数据库空间
-- **数据备份**：支持导出会话到 JSON 文件，防止数据丢失
-- **数据恢复**：支持从 JSON 文件导入会话，方便数据迁移
-- **易用性**：图形界面操作，无需手动操作 SQLite 数据库
-
-### 复用方式
-
-- 其他开发者可以基于此项目开发更复杂的会话管理工具
-- 可以作为 Python + tkinter GUI 开发的学习示例
-- 可以扩展支持其他 opencode 数据管理功能
+复用方式：核心层可直接被其他脚本 import；单元测试提供了 v1/v2 的最小表结构 fixture，便于扩展。

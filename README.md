@@ -1,168 +1,191 @@
 # OpenCode Session Manager
 
-> 管理 opencode 会话的 GUI/TUI 工具
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Rust](https://img.shields.io/badge/Rust-optional-orange.svg)](https://www.rust-lang.org/)
+[![OpenCode](https://img.shields.io/badge/OpenCode-v2%20%7C%20v1-4c6fff.svg)](https://github.com/anomalyco/opencode)
+[![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
 
-[![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-GPL%203.0-green.svg)](LICENSE)
+**English** | [中文](#中文)
 
-## AI 工作文档
+---
 
-本项目提供 AI 工作交接文档，方便 AI 助手快速了解项目：
+## English
 
-| 文件 | 说明 |
-|------|------|
-| [ai.md](ai.md) | 中文版 AI 交接文档 |
-| [ai_EN.md](ai_EN.md) | 英文版 AI 交接文档 |
+### What it does
 
-## 简介
+A desktop utility for inspecting, filtering, deleting and backing up OpenCode sessions. It reads the local SQLite database directly — no server, no API key, no telemetry.
 
-OpenCode Session Manager 是一个用于管理 [opencode](https://github.com/anomalyco/opencode) 会话数据的桌面工具。支持 GUI（图形界面）和 TUI（终端界面）两种模式，可以帮助你查看、删除、压缩和存档 opencode 的会话记录。
+**Why v2.0 exists:** OpenCode 2.x moved current sessions from the `session` table to `session_v2`, and moved messages to `session_message` / `session_part`. Earlier versions of this tool only read `session`, so v2 sessions were invisible and deleting a session could leave v2 child rows behind. v2.0 reads and writes both generations and exports complete session records.
 
-## 功能特性
+### Features
 
-| 功能 | 说明 |
-|------|------|
-| 📋 查看 | 按工作区分组显示所有会话，支持时间筛选 |
-| 🗑️ 删除 | 批量选择并删除不需要的会话 |
-| 🧹 清理 | 一键删除所有空会话/已归档会话 |
-| 📦 压缩 | VACUUM 数据库，清理删除操作留下的空闲空间 |
-| 💾 存档 | 导出会话到 JSON 文件进行备份，支持导入恢复 |
-| 🗂️ 归档管理 | 管理桌面版 opencode 的归档数据 |
-| 🌐 中英文 | 支持中文/英文界面切换 |
-| ⏰ 时间筛选 | 按今天/7天/30天筛选会话 |
+- Unified list of `session_v2` (v2) and `session` (v1) sessions, newest first
+- Filter by status (all / active / archived), time window (today / 7 d / 30 d) and free-text search
+- Grouping by project directory, with title, version, message count, token totals and cost in the detail pane
+- Batch delete with foreign-key cascades enabled, plus one-click removal of archived sessions
+- Full JSON backup: session row + messages + parts, restorable into the same database
+- Legacy `drafts.sqlite` archive manager (`document` key/value records)
+- Database VACUUM with before/after size reporting
+- Chinese / English UI toggle
+- Optional Rust/egui GUI with the same v2-aware reading and deletion logic
 
-## 数据源
+### Data sources
 
-| 数据库 | 位置 | 说明 |
-|--------|------|------|
-| `opencode.db` | `~/.local/share/opencode/` | CLI/GUI 当前会话（默认） |
-| `drafts.sqlite` | `%APPDATA%\ai.opencode.desktop\` | 桌面版归档数据（归档管理） |
+| Format | Table(s) | Typical location |
+| --- | --- | --- |
+| OpenCode v2 | `session_v2`, `session_message`, `session_part` | `~/.local/share/opencode/opencode.db` |
+| OpenCode v1 | `session`, `message`, `part` | same `opencode.db` |
+| Desktop draft archive | `document` | `%APPDATA%\ai.opencode.desktop\drafts.sqlite` |
 
-## 系统要求
+Database discovery honours `OPENCODE_SESSION_MANAGER_DB`, `XDG_DATA_HOME`, `%LOCALAPPDATA%` and `%APPDATA%`, so custom installs can be selected without editing code.
 
-- Python 3.7 或更高版本
-- tkinter（Python 内置，GUI 模式需要）
-
-## 安装
+### Run the Python GUI
 
 ```bash
-# 克隆仓库
 git clone https://github.com/VeloxLLM/opencode-session-manager.git
-
-# 进入项目目录
 cd opencode-session-manager
+python py/opencode_session_manager.py
 ```
 
-## 使用方法
+Requirements: Python 3.8+ with `tkinter`. No third-party packages.
+
+A specific database can be supplied without using the file picker:
 
 ```bash
-python opencode_session_manager.py
+OPENCODE_SESSION_MANAGER_DB=/path/to/opencode.db python py/opencode_session_manager.py
 ```
 
-### 功能说明
+### Build the Rust GUI (optional)
 
-1. **会话管理**：直接管理 opencode CLI/GUI 的当前会话
-2. **归档管理**：点击「归档管理」按钮，管理桌面版 opencode 的归档数据
-3. **时间筛选**：使用时间下拉框筛选今天/7天/30天内的会话
-
-或在 GUI 中点击「终端版」按钮启动。
-
-### TUI 快捷键
-
-| 键 | 功能 |
-|---|------|
-| ↑/↓ | 上下移动 |
-| Enter | 查看详情 |
-| d | 删除当前会话 |
-| e | 删除空会话 |
-| v | 压缩数据库 |
-| r | 刷新 |
-| q | 退出 |
-
-### 数据库位置
-
-程序会自动查找以下位置的 `drafts.sqlite` 文件：
-
-| 系统 | 路径 |
-|------|------|
-| Windows | `%APPDATA%\ai.opencode.desktop\drafts.sqlite` |
-| Windows (Local) | `%LOCALAPPDATA%\ai.opencode.desktop\drafts.sqlite` |
-
-如果未找到，可以点击「选择数据库」按钮手动选择。
-
-## 界面说明
-
-### GUI 界面
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  [刷新] [选择数据库] │ [删除空会话] [压缩数据库] [存档] [导入] │
-├─────────────────────────────────────────────────────────────┤
-│ 数据库信息: 路径/大小/记录数                                  │
-├────────────────────────────┬────────────────────────────────┤
-│ 会话列表                    │ 会话详情                        │
-│                            │                                │
-│ 📝 草稿 (45)               │ === 键 ===                     │
-│   ├─ 提示词预览...          │ opencode.draft.xxx:draft:prompt│
-│   └─ 提示词预览...          │                                │
-│                            │ === 内容 (JSON) ===            │
-│ 📁 工作区 (20)             │ {                              │
-│   ├─ 提示词预览...          │   "prompt": [...]              │
-│   └─ 提示词预览...          │ }                              │
-│                            │                                │
-│ 🌐 全局历史                 │                                │
-└────────────────────────────┴────────────────────────────────┘
+```bash
+cd rust
+cargo build --release
 ```
 
-### TUI 界面
-
-```
- OpenCode Session Manager (TUI)                Sessions: 91
-    1. 给我一个 git 的名字...
-    2. 用 py 写一个管理 opencode...
-    3. (empty)
-    4. 检测一下速度大概是多少...
-    ...
-───────────────────────────────────────────────────────────────
- q:Quit  d:Delete  e:DeleteEmpty  v:Vacuum  a:Archive  r:Refresh
-```
-
-## 存档格式
-
-导出的 JSON 文件格式：
+### Backup format (v2)
 
 ```json
 {
-  "version": 1,
-  "created_at": "2026-09-01T21:00:00",
-  "source": "path/to/drafts.sqlite",
-  "records": [
+  "format": "opencode-session-manager",
+  "version": 2,
+  "created_at": "2026-11-23T18:00:00",
+  "source": "/path/to/opencode.db",
+  "sessions": [
     {
-      "key": "session_key",
-      "value": "{\"prompt\":[...]}"
+      "table": "session_v2",
+      "row": { "id": "ses_...", "title": "...", "project_id": "...", "cost": 0.0 },
+      "messages": [{ "id": "msg_...", "type": "assistant", "seq": 1, "data": "{}" }],
+      "parts": []
     }
   ]
 }
 ```
 
-## 数据库结构
+Version 1 archives (`{"version": 1, "records": [{"key": ..., "value": ...}]}`) can still be imported.
 
-opencode 使用 SQLite 数据库存储会话数据：
+### Safety
 
-| 表名 | 说明 |
-|------|------|
-| `document` | 存储会话数据（key-value 格式） |
-| `blob` | 存储二进制数据 |
+- Deletion and import write to the real OpenCode database. Back it up first and close OpenCode when possible.
+- Delete operations enable `PRAGMA foreign_keys` so child rows are removed with their session.
+- Import inserts a minimal `project` row when the referenced project is missing, then restores sessions, messages and parts in order.
+- `VACUUM` rebuilds the whole file; it may fail while OpenCode holds a write lock.
 
-键名格式：
-- `opencode.draft.*:draft:prompt` - 草稿
-- `opencode.workspace.*.dat:session:ses_*:prompt` - 工作区会话
-- `opencode.global.dat:prompt-history` - 全局历史
+### Tests and layout
 
-## 贡献
+```bash
+python -m unittest discover -s tests -v
+```
 
-欢迎提交 Issue 和 Pull Request！
+```text
+py/opencode_core.py                 schema detection, query/delete/backup layer
+py/opencode_session_manager.py      tkinter GUI
+py/tests/test_core.py               headless unit tests (v1 + v2 fixtures)
+rust/src/main.rs                    optional native GUI
+```
 
-## 许可证
+### License
 
-GPL 3.0 - 详见 [LICENSE](LICENSE) 文件
+GPL-3.0. See [LICENSE](LICENSE).
+
+---
+
+## 中文
+
+### 这个工具做什么
+
+直接读取本机 SQLite 数据库，查看、筛选、删除和备份 OpenCode 会话。不需要服务端、不需要 API Key，也没有遥测。
+
+**v2.0 的由来：** OpenCode 2.x 把当前会话从 `session` 表迁到了 `session_v2`，消息也改为存放在 `session_message` / `session_part`。旧版工具只读 `session`，因此看不到 v2 会话，删除时也可能留下 v2 子记录。v2.0 同时支持两代 schema，并导出完整会话数据。
+
+### 功能
+
+- 合并显示 `session_v2`（v2）与 `session`（v1）会话，按更新时间倒序
+- 支持状态（全部 / 活跃 / 已归档）、时间（今天 / 7 天 / 30 天）和关键词筛选
+- 按项目目录分组，详情显示标题、版本、消息数、Token 与费用
+- 批量删除（开启外键级联）与一键删除已归档会话
+- 完整 JSON 备份：会话行 + 消息 + 片段，可导回同一数据库
+- 旧版 `drafts.sqlite` 归档管理（`document` 键值对）
+- 数据库 VACUUM，并报告压缩前后体积
+- 中英文界面切换
+- 可选的 Rust/egui 原生界面，同样兼容 v2
+
+### 数据源
+
+| 格式 | 数据表 | 常见位置 |
+| --- | --- | --- |
+| OpenCode v2 | `session_v2`、`session_message`、`session_part` | `~/.local/share/opencode/opencode.db` |
+| OpenCode v1 | `session`、`message`、`part` | 同一个 `opencode.db` |
+| 桌面草稿归档 | `document` | `%APPDATA%\ai.opencode.desktop\drafts.sqlite` |
+
+程序依次检查 `OPENCODE_SESSION_MANAGER_DB`、`XDG_DATA_HOME`、`%LOCALAPPDATA%` 与 `%APPDATA%`，自定义安装路径无需改代码。
+
+### 运行 Python 版
+
+```bash
+git clone https://github.com/VeloxLLM/opencode-session-manager.git
+cd opencode-session-manager
+python py/opencode_session_manager.py
+```
+
+要求：Python 3.8+ 且带 `tkinter`，无第三方依赖。
+
+也可以跳过文件选择框，直接指定数据库：
+
+```bash
+OPENCODE_SESSION_MANAGER_DB=/path/to/opencode.db python py/opencode_session_manager.py
+```
+
+### 构建 Rust 版（可选）
+
+```bash
+cd rust
+cargo build --release
+```
+
+### v2 备份格式
+
+见上方英文章节的 JSON 示例。v1 格式（`{"version": 1, "records": [...]}`）仍可导入。
+
+### 安全说明
+
+- 删除和导入会写入真实的 OpenCode 数据库，操作前请先备份，并尽量关闭 OpenCode。
+- 删除时启用 `PRAGMA foreign_keys`，会话子记录会随之删除。
+- 导入时若项目记录缺失，会补一条最小化的 `project` 行，再按顺序恢复会话、消息和片段。
+- `VACUUM` 会重建整个数据库文件；OpenCode 持有写锁时可能失败。
+
+### 测试与目录结构
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+```text
+py/opencode_core.py                 数据库核心层（schema 检测、查询、删除、备份）
+py/opencode_session_manager.py      tkinter 图形界面
+py/tests/test_core.py               无界面单元测试（v1 + v2 测试数据）
+rust/src/main.rs                    可选的原生界面
+```
+
+### 许可证
+
+GPL-3.0，详见 [LICENSE](LICENSE)。

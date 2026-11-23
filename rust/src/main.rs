@@ -71,9 +71,11 @@ fn setup_fonts(ctx: &egui::Context) {
 
 #[derive(Clone, Debug)]
 struct Session {
+    table: String,
     id: String,
     title: String,
     directory: String,
+    version: String,
     time_created: i64,
     time_updated: i64,
     time_archived: Option<i64>,
@@ -213,38 +215,56 @@ impl App {
             }
         };
 
-        let mut stmt = match conn.prepare(
-            "SELECT id, title, directory, time_created, time_updated, time_archived, 
-             cost, tokens_input, tokens_output 
-             FROM session ORDER BY time_updated DESC"
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status_message = format!("查询失败: {}", e);
-                return;
-            }
-        };
-
-        let rows = stmt.query_map([], |row| {
-            Ok(Session {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                directory: row.get(2)?,
-                time_created: row.get(3)?,
-                time_updated: row.get(4)?,
-                time_archived: row.get(5)?,
-                cost: row.get(6)?,
-                tokens_input: row.get(7)?,
-                tokens_output: row.get(8)?,
+        let available: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| rows.flatten().collect())
+                    .unwrap_or_default()
             })
-        });
+            .unwrap_or_default();
 
-        if let Ok(rows) = rows {
-            for row in rows.flatten() {
-                self.sessions.push(row);
+        // OpenCode v2 writes current sessions to `session_v2`; v1 sessions stay in `session`.
+        for table in ["session_v2", "session"] {
+            if !available.iter().any(|name| name == table) {
+                continue;
+            }
+            let sql = format!(
+                "SELECT id, title, directory, version, time_created, time_updated, \
+                 time_archived, cost, tokens_input, tokens_output \
+                 FROM {} ORDER BY time_updated DESC",
+                table
+            );
+            let mut stmt = match conn.prepare(&sql) {
+                Ok(s) => s,
+                Err(e) => {
+                    self.status_message = format!("查询失败: {}", e);
+                    continue;
+                }
+            };
+            let rows = stmt.query_map([], |row| {
+                Ok(Session {
+                    table: table.to_string(),
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    directory: row.get(2)?,
+                    version: row.get(3).unwrap_or_default(),
+                    time_created: row.get(4)?,
+                    time_updated: row.get(5)?,
+                    time_archived: row.get(6)?,
+                    cost: row.get(7).unwrap_or(0.0),
+                    tokens_input: row.get(8).unwrap_or(0),
+                    tokens_output: row.get(9).unwrap_or(0),
+                })
+            });
+            if let Ok(rows) = rows {
+                for row in rows.flatten() {
+                    self.sessions.push(row);
+                }
             }
         }
 
+        self.sessions.sort_by(|a, b| b.time_updated.cmp(&a.time_updated));
         self.status_message = format!("{} {} 条", self.t("total"), self.sessions.len());
     }
 
@@ -295,12 +315,17 @@ impl App {
             Err(_) => return,
         };
 
-        let selected_ids: Vec<String> = self.selected_sessions.iter()
-            .filter_map(|&i| self.sessions.get(i).map(|s| s.id.clone()))
+        let selected: Vec<(String, String)> = self.selected_sessions.iter()
+            .filter_map(|&i| self.sessions.get(i).map(|s| (s.table.clone(), s.id.clone())))
             .collect();
 
-        for id in &selected_ids {
-            let _ = conn.execute("DELETE FROM session WHERE id = ?", params![id]);
+        let _ = conn.execute("PRAGMA foreign_keys = ON", params![]);
+        for (table, id) in &selected {
+            // `table` only ever comes from the two constants used in load_sessions.
+            if table == "session_v2" || table == "session" {
+                let sql = format!("DELETE FROM {} WHERE id = ?", table);
+                let _ = conn.execute(&sql, params![id]);
+            }
         }
 
         self.selected_sessions.clear();
@@ -617,7 +642,7 @@ impl App {
                 ui.painter().text(
                     rect.left_center() + Vec2::new(12.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    format!("[{}] {}", time_str, title),
+                    format!("[{}][{}] {}", if session.table == "session_v2" { "v2" } else { "v1" }, time_str, title),
                     egui::FontId::proportional(14.0),
                     text_color,
                 );
@@ -721,6 +746,12 @@ impl App {
 }
 
 fn find_opencode_db() -> Option<PathBuf> {
+    if let Ok(override_path) = std::env::var("OPENCODE_SESSION_MANAGER_DB") {
+        let path = PathBuf::from(override_path);
+        if path.exists() {
+            return Some(path);
+        }
+    }
     let home = dirs::home_dir()?;
     let db_path = home.join(".local").join("share").join("opencode").join("opencode.db");
     if db_path.exists() {
