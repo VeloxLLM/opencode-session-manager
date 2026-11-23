@@ -1,7 +1,6 @@
 # OpenCode Session Manager
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![Rust](https://img.shields.io/badge/Rust-optional-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![OpenCode](https://img.shields.io/badge/OpenCode-v2-4c6fff.svg)](https://github.com/anomalyco/opencode)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
 
@@ -13,20 +12,19 @@
 
 ### What it does
 
-A desktop utility for inspecting, filtering, deleting and backing up **OpenCode v2** sessions. It reads the local SQLite database directly — no server, no API key, no telemetry.
+A native desktop utility for inspecting, filtering, deleting and backing up **OpenCode v2** sessions. It reads the local SQLite database directly — no server, no API key, no telemetry.
 
-Scope is deliberately narrow: only the v2 tables (`session_v2`, `session_message`, `session_part`) are used. Databases without `session_v2` are rejected with a clear message.
+This project is **Rust-only**. It uses only the v2 tables (`session_v2`, `session_message`, `session_part`); databases without `session_v2` are rejected.
 
 ### Features
 
 - Session list from `session_v2`, newest first
-- Filter by status (all / active / archived), time window (today / 7 d / 30 d) and free-text search
-- Grouping by project directory, with title, version, message count, token totals and cost in the detail pane
-- Batch delete with foreign-key cascades enabled, plus one-click removal of archived sessions
+- Filter by status (all / active / archived), time window (all / today / 7 days / 30 days) and free-text search
+- Grouping by project directory; detail columns include title, version, message count, token totals and cost
+- Batch delete with foreign-key cascades enabled, plus one-click deletion of all archived sessions
 - Full JSON backup: session row + messages + parts, restorable into the same database
-- Database VACUUM with before/after size reporting
+- Database VACUUM
 - Chinese / English UI toggle
-- Optional Rust/egui GUI with the same v2-only logic
 
 ### Data source
 
@@ -36,72 +34,53 @@ Scope is deliberately narrow: only the v2 tables (`session_v2`, `session_message
 | `session_message` | Assistant / user messages |
 | `session_part` | Message parts |
 
-Default location: `~/.local/share/opencode/opencode.db`.
+Default location: `~/.local/share/opencode/opencode.db`. Set `OPENCODE_SESSION_MANAGER_DB` to override the path.
 
-Discovery honours `OPENCODE_SESSION_MANAGER_DB`, `XDG_DATA_HOME`, `%LOCALAPPDATA%` and `%APPDATA%`, so custom installs can be selected without editing code.
-
-### Run the Python GUI
+### Build and run
 
 ```bash
 git clone https://github.com/VeloxLLM/opencode-session-manager.git
-cd opencode-session-manager
-python py/opencode_session_manager.py
-```
-
-Requirements: Python 3.8+ with `tkinter`. No third-party packages.
-
-A specific database can be supplied without using the file picker:
-
-```bash
-OPENCODE_SESSION_MANAGER_DB=/path/to/opencode.db python py/opencode_session_manager.py
-```
-
-### Build the Rust GUI (optional)
-
-```bash
-cd rust
+cd opencode-session-manager/rust
 cargo build --release
+cargo run --release
 ```
 
-### Backup format
+The binary is `rust/target/release/opencode-session-manager`.
+
+### Backup and restore
+
+Type or paste a file path into the **Archive path** field, then use **Export** or **Import**:
+
+- **Export** writes the selected sessions, their messages and parts as version 2 JSON.
+- **Import** accepts only version 2 archives. Duplicate session IDs are replaced.
 
 ```json
 {
   "format": "opencode-session-manager",
   "version": 2,
-  "created_at": "2026-11-23T18:00:00",
-  "source": "/path/to/opencode.db",
   "sessions": [
     {
       "table": "session_v2",
-      "row": { "id": "ses_...", "title": "...", "project_id": "...", "cost": 0.0 },
-      "messages": [{ "id": "msg_...", "type": "assistant", "seq": 1, "data": "{}" }],
+      "row": { "id": "ses_...", "title": "...", "project_id": "..." },
+      "messages": [],
       "parts": []
     }
   ]
 }
 ```
 
-Only version 2 archives are accepted.
-
 ### Safety
 
 - Deletion and import write to the real OpenCode database. Back it up first and close OpenCode when possible.
 - Delete operations enable `PRAGMA foreign_keys` so child rows are removed with their session.
-- Import inserts a minimal `project` row when the referenced project is missing, then restores sessions, messages and parts in order.
+- Import temporarily disables foreign keys, inserts a minimal `project` row when needed, then restores sessions, messages and parts.
 - `VACUUM` rebuilds the whole file; it may fail while OpenCode holds a write lock.
 
-### Tests and layout
-
-```bash
-python -m unittest discover -s tests -v
-```
+### Layout
 
 ```text
-py/opencode_core.py                 v2-only database layer
-py/opencode_session_manager.py      tkinter GUI
-py/tests/test_core.py               headless unit tests with v2 fixtures
-rust/src/main.rs                    optional native GUI
+rust/Cargo.toml
+rust/src/main.rs    v2-only GUI, database access, backup and restore
 ```
 
 ### License
@@ -114,20 +93,19 @@ GPL-3.0. See [LICENSE](LICENSE).
 
 ### 这个工具做什么
 
-直接读取本机 SQLite 数据库，查看、筛选、删除和备份 **OpenCode v2** 会话。不需要服务端、不需要 API Key，也没有遥测。
+原生桌面工具，用于查看、筛选、删除和备份 **OpenCode v2** 会话。直接读取本机 SQLite 数据库，不需要服务端、API Key，也没有遥测。
 
-范围刻意收窄：只使用 v2 数据表（`session_v2`、`session_message`、`session_part`）。不含 `session_v2` 的数据库会被明确拒绝。
+本项目**只有 Rust 实现**，只使用 v2 数据表（`session_v2`、`session_message`、`session_part`）；不含 `session_v2` 的数据库会被拒绝。
 
 ### 功能
 
 - 读取 `session_v2` 会话列表，按更新时间倒序
-- 支持状态（全部 / 活跃 / 已归档）、时间（今天 / 7 天 / 30 天）和关键词筛选
-- 按项目目录分组，详情显示标题、版本、消息数、Token 与费用
-- 批量删除（开启外键级联）与一键删除已归档会话
+- 支持状态（全部 / 活跃 / 已归档）、时间（全部 / 今天 / 7 天 / 30 天）与关键词筛选
+- 按项目目录分组，详情包含标题、版本、消息数、Token 与费用
+- 批量删除（开启外键级联）与一键删除全部已归档会话
 - 完整 JSON 备份：会话行 + 消息 + 片段，可导回同一数据库
-- 数据库 VACUUM，并报告压缩前后体积
+- 数据库 VACUUM
 - 中英文界面切换
-- 可选的 Rust/egui 原生界面，逻辑同样仅限 v2
 
 ### 数据源
 
@@ -137,55 +115,40 @@ GPL-3.0. See [LICENSE](LICENSE).
 | `session_message` | 用户 / 助手消息 |
 | `session_part` | 消息片段 |
 
-默认位置：`~/.local/share/opencode/opencode.db`。
+默认位置：`~/.local/share/opencode/opencode.db`。可通过 `OPENCODE_SESSION_MANAGER_DB` 环境变量覆盖。
 
-程序依次检查 `OPENCODE_SESSION_MANAGER_DB`、`XDG_DATA_HOME`、`%LOCALAPPDATA%` 与 `%APPDATA%`，自定义安装路径无需改代码。
-
-### 运行 Python 版
+### 构建与运行
 
 ```bash
 git clone https://github.com/VeloxLLM/opencode-session-manager.git
-cd opencode-session-manager
-python py/opencode_session_manager.py
-```
-
-要求：Python 3.8+ 且带 `tkinter`，无第三方依赖。
-
-也可以跳过文件选择框，直接指定数据库：
-
-```bash
-OPENCODE_SESSION_MANAGER_DB=/path/to/opencode.db python py/opencode_session_manager.py
-```
-
-### 构建 Rust 版（可选）
-
-```bash
-cd rust
+cd opencode-session-manager/rust
 cargo build --release
+cargo run --release
 ```
 
-### 备份格式
+产物位于 `rust/target/release/opencode-session-manager`。
 
-见上方英文章节的 JSON 示例。只接受 version 2 的存档。
+### 备份与恢复
+
+在 **存档路径** 输入框中填写路径，然后点 **导出** 或 **导入**：
+
+- **导出**：把选中会话及其消息、片段写成 version 2 JSON。
+- **导入**：只接受 version 2 存档；相同 ID 的会话会被覆盖。
+
+JSON 结构见上方英文章节。
 
 ### 安全说明
 
-- 删除和导入会写入真实的 OpenCode 数据库，操作前请先备份，并尽量关闭 OpenCode。
-- 删除时启用 `PRAGMA foreign_keys`，会话子记录会随之删除。
-- 导入时若项目记录缺失，会补一条最小化的 `project` 行，再按顺序恢复会话、消息和片段。
+- 删除和导入会写入真实数据库，操作前请先备份并尽量关闭 OpenCode。
+- 删除时启用 `PRAGMA foreign_keys`，会话子记录随之删除。
+- 导入会临时关闭外键，必要时补一条最小化 `project` 行，再恢复会话、消息与片段。
 - `VACUUM` 会重建整个数据库文件；OpenCode 持有写锁时可能失败。
 
-### 测试与目录结构
-
-```bash
-python -m unittest discover -s tests -v
-```
+### 目录结构
 
 ```text
-py/opencode_core.py                 仅限 v2 的数据库核心层
-py/opencode_session_manager.py      tkinter 图形界面
-py/tests/test_core.py               无界面单元测试（v2 测试数据）
-rust/src/main.rs                    可选的原生界面
+rust/Cargo.toml
+rust/src/main.rs    v2-only 界面、数据库访问、备份与恢复
 ```
 
 ### 许可证

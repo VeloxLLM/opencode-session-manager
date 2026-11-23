@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.0.2 — 2026-11-23 (Rust only)
+
+- Removed the Python implementation entirely (`py/`, `tests/`); the Rust GUI is now the only implementation.
+- Ported Python-only features to Rust: version 2 JSON export/import, delete-all-archived, status filter, directory grouping, session detail panel and extended search over title/directory/session ID/project ID.
+- Backup path is entered in the GUI instead of using a native file dialog, avoiding extra dependencies.
+- README, handoff documents and repository metadata now describe a Rust-only, OpenCode v2-only tool.
+
 ## v2.0.1 — 2026-11-23 (v2 only)
 
 - Removed all legacy compatibility paths: `session`, `message`, `part` and `document` tables are no longer read or written.
