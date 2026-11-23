@@ -324,7 +324,7 @@ impl App {
             // `table` only ever comes from the two constants used in load_sessions.
             if table == "session_v2" || table == "session" {
                 let sql = format!("DELETE FROM {} WHERE id = ?", table);
-                let _ = conn.execute(&sql, params![id]);
+                let _ = conn.execute(&sql, params![id.as_str()]);
             }
         }
 

@@ -472,7 +472,9 @@ def delete_sessions(conn: sqlite3.Connection, refs: Sequence[SessionRef]) -> int
     if not valid:
         return 0
     conn.commit()
-    conn.execute("PRAGMA foreign_keys = ON")
+    was_enabled = bool(conn.execute("PRAGMA foreign_keys").fetchone()[0])
+    if not was_enabled:
+        conn.execute("PRAGMA foreign_keys = ON")
     deleted = 0
     try:
         for ref in valid:
@@ -482,7 +484,8 @@ def delete_sessions(conn: sqlite3.Connection, refs: Sequence[SessionRef]) -> int
             deleted += cursor.rowcount if cursor.rowcount > 0 else 0
         conn.commit()
     finally:
-        conn.execute("PRAGMA foreign_keys = OFF")
+        if not was_enabled:
+            conn.execute("PRAGMA foreign_keys = OFF")
     return deleted
 
 
