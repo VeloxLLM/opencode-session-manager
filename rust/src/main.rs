@@ -1,4 +1,4 @@
-use eframe::egui::{self, FontData, FontDefinitions, FontFamily, Color32, Style, Visuals, Stroke, Rounding, Vec2};
+use eframe::egui::{self, FontData, FontDefinitions, FontFamily, Color32, Style, Rounding, Vec2};
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use chrono::{Local, TimeZone};
@@ -71,7 +71,6 @@ fn setup_fonts(ctx: &egui::Context) {
 
 #[derive(Clone, Debug)]
 struct Session {
-    table: String,
     id: String,
     title: String,
     directory: String,
@@ -84,27 +83,11 @@ struct Session {
     tokens_output: i64,
 }
 
-#[derive(Clone, Debug)]
-struct ArchiveRecord {
-    key: String,
-    value: String,
-}
-
-#[derive(PartialEq, Clone)]
-enum Tab {
-    Sessions,
-    Archive,
-}
-
 struct App {
     lang: String,
-    current_tab: Tab,
     db_path: Option<PathBuf>,
-    archive_db_path: Option<PathBuf>,
     sessions: Vec<Session>,
-    archive_records: Vec<ArchiveRecord>,
     selected_sessions: Vec<usize>,
-    selected_archive: Vec<usize>,
     filter_text: String,
     time_filter: String,
     status_message: String,
@@ -113,18 +96,11 @@ struct App {
 
 impl App {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let db_path = find_opencode_db();
-        let archive_db_path = find_archive_db();
-
         let mut app = Self {
             lang: "zh".to_string(),
-            current_tab: Tab::Sessions,
-            db_path,
-            archive_db_path,
+            db_path: find_opencode_db(),
             sessions: Vec::new(),
-            archive_records: Vec::new(),
             selected_sessions: Vec::new(),
-            selected_archive: Vec::new(),
             filter_text: String::new(),
             time_filter: "all".to_string(),
             status_message: "就绪".to_string(),
@@ -132,7 +108,6 @@ impl App {
         };
 
         app.load_sessions();
-        app.load_archive();
         app
     }
 
@@ -141,7 +116,6 @@ impl App {
             "zh" => match key {
                 "window_title" => "OpenCode 会话管理器".to_string(),
                 "sessions" => "📋 会话".to_string(),
-                "archive" => "🗂️ 归档".to_string(),
                 "refresh" => "🔄 刷新".to_string(),
                 "select_db" => "📂 选择数据库".to_string(),
                 "vacuum" => "📦 压缩".to_string(),
@@ -161,7 +135,6 @@ impl App {
                 "yes" => "✓ 是".to_string(),
                 "no" => "✗ 否".to_string(),
                 "no_sessions" => "没有找到会话".to_string(),
-                "no_archive" => "没有找到归档记录".to_string(),
                 "total" => "总计".to_string(),
                 "sessions_count" => "个会话".to_string(),
                 "records_count" => "条记录".to_string(),
@@ -170,7 +143,6 @@ impl App {
             _ => match key {
                 "window_title" => "OpenCode Session Manager".to_string(),
                 "sessions" => "📋 Sessions".to_string(),
-                "archive" => "🗂️ Archive".to_string(),
                 "refresh" => "🔄 Refresh".to_string(),
                 "select_db" => "📂 Select DB".to_string(),
                 "vacuum" => "📦 Vacuum".to_string(),
@@ -190,7 +162,6 @@ impl App {
                 "yes" => "✓ Yes".to_string(),
                 "no" => "✗ No".to_string(),
                 "no_sessions" => "No sessions found".to_string(),
-                "no_archive" => "No archive records found".to_string(),
                 "total" => "Total".to_string(),
                 "sessions_count" => "sessions".to_string(),
                 "records_count" => "records".to_string(),
@@ -215,89 +186,47 @@ impl App {
             }
         };
 
-        let available: Vec<String> = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-            .map(|mut stmt| {
-                stmt.query_map([], |row| row.get::<_, String>(0))
-                    .map(|rows| rows.flatten().collect())
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-
-        // OpenCode v2 writes current sessions to `session_v2`; v1 sessions stay in `session`.
-        for table in ["session_v2", "session"] {
-            if !available.iter().any(|name| name == table) {
-                continue;
-            }
-            let sql = format!(
-                "SELECT id, title, directory, version, time_created, time_updated, \
-                 time_archived, cost, tokens_input, tokens_output \
-                 FROM {} ORDER BY time_updated DESC",
-                table
-            );
-            let mut stmt = match conn.prepare(&sql) {
-                Ok(s) => s,
-                Err(e) => {
-                    self.status_message = format!("查询失败: {}", e);
-                    continue;
-                }
-            };
-            let rows = stmt.query_map([], |row| {
-                Ok(Session {
-                    table: table.to_string(),
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    directory: row.get(2)?,
-                    version: row.get(3).unwrap_or_default(),
-                    time_created: row.get(4)?,
-                    time_updated: row.get(5)?,
-                    time_archived: row.get(6)?,
-                    cost: row.get(7).unwrap_or(0.0),
-                    tokens_input: row.get(8).unwrap_or(0),
-                    tokens_output: row.get(9).unwrap_or(0),
-                })
-            });
-            if let Ok(rows) = rows {
-                for row in rows.flatten() {
-                    self.sessions.push(row);
-                }
-            }
+        let has_v2: bool = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_v2'")
+            .and_then(|mut stmt| stmt.exists(params![]))
+            .unwrap_or(false);
+        if !has_v2 {
+            self.status_message = "仅支持 OpenCode v2 数据库".to_string();
+            return;
         }
 
-        self.sessions.sort_by(|a, b| b.time_updated.cmp(&a.time_updated));
-        self.status_message = format!("{} {} 条", self.t("total"), self.sessions.len());
-    }
-
-    fn load_archive(&mut self) {
-        self.archive_records.clear();
-
-        let db_path = match &self.archive_db_path {
-            Some(p) => p.clone(),
-            None => return,
-        };
-
-        let conn = match Connection::open(&db_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-
-        let mut stmt = match conn.prepare("SELECT key, value FROM document ORDER BY key") {
+        let mut stmt = match conn.prepare(
+            "SELECT id, title, directory, version, time_created, time_updated, \
+             time_archived, cost, tokens_input, tokens_output \
+             FROM session_v2 ORDER BY time_updated DESC",
+        ) {
             Ok(s) => s,
-            Err(_) => return,
+            Err(e) => {
+                self.status_message = format!("查询失败: {}", e);
+                return;
+            }
         };
-
         let rows = stmt.query_map([], |row| {
-            Ok(ArchiveRecord {
-                key: row.get(0)?,
-                value: row.get(1)?,
+            Ok(Session {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                directory: row.get(2)?,
+                version: row.get(3).unwrap_or_default(),
+                time_created: row.get(4)?,
+                time_updated: row.get(5)?,
+                time_archived: row.get(6)?,
+                cost: row.get(7).unwrap_or(0.0),
+                tokens_input: row.get(8).unwrap_or(0),
+                tokens_output: row.get(9).unwrap_or(0),
             })
         });
-
         if let Ok(rows) = rows {
             for row in rows.flatten() {
-                self.archive_records.push(row);
+                self.sessions.push(row);
             }
         }
+
+        self.status_message = format!("{} {} 条", self.t("total"), self.sessions.len());
     }
 
     fn delete_selected_sessions(&mut self) {
@@ -315,48 +244,17 @@ impl App {
             Err(_) => return,
         };
 
-        let selected: Vec<(String, String)> = self.selected_sessions.iter()
-            .filter_map(|&i| self.sessions.get(i).map(|s| (s.table.clone(), s.id.clone())))
+        let selected_ids: Vec<String> = self.selected_sessions.iter()
+            .filter_map(|&i| self.sessions.get(i).map(|s| s.id.clone()))
             .collect();
 
         let _ = conn.execute("PRAGMA foreign_keys = ON", params![]);
-        for (table, id) in &selected {
-            // `table` only ever comes from the two constants used in load_sessions.
-            if table == "session_v2" || table == "session" {
-                let sql = format!("DELETE FROM {} WHERE id = ?", table);
-                let _ = conn.execute(&sql, params![id.as_str()]);
-            }
+        for id in &selected_ids {
+            let _ = conn.execute("DELETE FROM session_v2 WHERE id = ?", params![id.as_str()]);
         }
 
         self.selected_sessions.clear();
         self.load_sessions();
-    }
-
-    fn delete_selected_archive(&mut self) {
-        if self.selected_archive.is_empty() {
-            return;
-        }
-
-        let db_path = match &self.archive_db_path {
-            Some(p) => p.clone(),
-            None => return,
-        };
-
-        let conn = match Connection::open(&db_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-
-        let selected_keys: Vec<String> = self.selected_archive.iter()
-            .filter_map(|&i| self.archive_records.get(i).map(|r| r.key.clone()))
-            .collect();
-
-        for key in &selected_keys {
-            let _ = conn.execute("DELETE FROM document WHERE key = ?", params![key]);
-        }
-
-        self.selected_archive.clear();
-        self.load_archive();
     }
 
     fn format_time(timestamp: i64) -> String {
@@ -365,25 +263,6 @@ impl App {
             Some(dt) => dt.format("%m/%d %H:%M").to_string(),
             None => "--".to_string(),
         }
-    }
-
-    fn extract_preview(value: &str) -> String {
-        if let Ok(data) = serde_json::from_str::<serde_json::Value>(value) {
-            if let Some(prompt) = data.get("prompt").and_then(|p| p.as_array()) {
-                for part in prompt {
-                    if let Some(content) = part.get("content").and_then(|c| c.as_str()) {
-                        if !content.is_empty() {
-                            return if content.len() > 40 {
-                                format!("{}...", &content[..40])
-                            } else {
-                                content.to_string()
-                            };
-                        }
-                    }
-                }
-            }
-        }
-        "(空)".to_string()
     }
 
     fn vacuum_database(&mut self) {
@@ -397,21 +276,11 @@ impl App {
     }
 
     fn select_all(&mut self) {
-        match self.current_tab {
-            Tab::Sessions => {
-                self.selected_sessions = (0..self.sessions.len()).collect();
-            }
-            Tab::Archive => {
-                self.selected_archive = (0..self.archive_records.len()).collect();
-            }
-        }
+        self.selected_sessions = (0..self.sessions.len()).collect();
     }
 
     fn deselect_all(&mut self) {
-        match self.current_tab {
-            Tab::Sessions => self.selected_sessions.clear(),
-            Tab::Archive => self.selected_archive.clear(),
-        }
+        self.selected_sessions.clear();
     }
 }
 
@@ -433,24 +302,7 @@ impl eframe::App for App {
                 ui.separator();
                 ui.add_space(8.0);
 
-                // 标签页
-                let sessions_style = if self.current_tab == Tab::Sessions {
-                    egui::RichText::new(self.t("sessions")).strong().color(Color32::from_rgb(0, 120, 215))
-                } else {
-                    egui::RichText::new(self.t("sessions"))
-                };
-                let archive_style = if self.current_tab == Tab::Archive {
-                    egui::RichText::new(self.t("archive")).strong().color(Color32::from_rgb(0, 120, 215))
-                } else {
-                    egui::RichText::new(self.t("archive"))
-                };
-
-                if ui.add(egui::Button::new(sessions_style).frame(false)).clicked() {
-                    self.current_tab = Tab::Sessions;
-                }
-                if ui.add(egui::Button::new(archive_style).frame(false)).clicked() {
-                    self.current_tab = Tab::Archive;
-                }
+                ui.label(egui::RichText::new(self.t("sessions")).strong());
 
                 ui.add_space(8.0);
                 ui.separator();
@@ -459,7 +311,6 @@ impl eframe::App for App {
                 // 操作按钮
                 if ui.button(self.t("refresh")).clicked() {
                     self.load_sessions();
-                    self.load_archive();
                 }
 
                 if ui.button(self.t("vacuum")).clicked() {
@@ -493,9 +344,7 @@ impl eframe::App for App {
                     let delete_btn = egui::Button::new(
                         egui::RichText::new(self.t("delete")).color(Color32::from_rgb(200, 50, 50))
                     );
-                    if ui.add(delete_btn).clicked() && 
-                       ((!self.selected_sessions.is_empty() && self.current_tab == Tab::Sessions) ||
-                        (!self.selected_archive.is_empty() && self.current_tab == Tab::Archive)) {
+                    if ui.add(delete_btn).clicked() && !self.selected_sessions.is_empty() {
                         self.show_delete_confirm = true;
                     }
                 });
@@ -541,10 +390,7 @@ impl eframe::App for App {
             ui.add_space(4.0);
 
             // 内容区域
-            match self.current_tab {
-                Tab::Sessions => self.show_sessions(ui),
-                Tab::Archive => self.show_archive(ui),
-            }
+            self.show_sessions(ui);
         });
 
         // 删除确认对话框
@@ -559,10 +405,7 @@ impl eframe::App for App {
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
                         if ui.button(self.t("yes")).clicked() {
-                            match self.current_tab {
-                                Tab::Sessions => self.delete_selected_sessions(),
-                                Tab::Archive => self.delete_selected_archive(),
-                            }
+                            self.delete_selected_sessions();
                             self.show_delete_confirm = false;
                         }
                         if ui.button(self.t("no")).clicked() {
@@ -642,7 +485,7 @@ impl App {
                 ui.painter().text(
                     rect.left_center() + Vec2::new(12.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    format!("[{}][{}] {}", if session.table == "session_v2" { "v2" } else { "v1" }, time_str, title),
+                    format!("[{}] {}", time_str, title),
                     egui::FontId::proportional(14.0),
                     text_color,
                 );
@@ -672,77 +515,6 @@ impl App {
         });
     }
 
-    fn show_archive(&mut self, ui: &mut egui::Ui) {
-        let filtered: Vec<(usize, &ArchiveRecord)> = self.archive_records.iter()
-            .enumerate()
-            .filter(|(_, r)| {
-                if !self.filter_text.is_empty() {
-                    let filter = self.filter_text.to_lowercase();
-                    return r.key.to_lowercase().contains(&filter);
-                }
-                true
-            })
-            .collect();
-
-        if filtered.is_empty() {
-            ui.centered_and_justified(|ui| {
-                ui.label(
-                    egui::RichText::new(self.t("no_archive"))
-                        .color(Color32::GRAY)
-                        .size(16.0)
-                );
-            });
-            return;
-        }
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (idx, record) in filtered {
-                let is_selected = self.selected_archive.contains(&idx);
-                let preview = Self::extract_preview(&record.value);
-                
-                let bg_color = if is_selected {
-                    Color32::from_rgb(0, 120, 215)
-                } else if idx % 2 == 0 {
-                    Color32::from_rgb(245, 245, 245)
-                } else {
-                    Color32::WHITE
-                };
-
-                let response = ui.allocate_response(Vec2::new(ui.available_width(), 36.0), egui::Sense::click());
-                
-                if response.hovered() || is_selected {
-                    let rect = response.rect;
-                    ui.painter().rect_filled(rect, Rounding::same(4.0), bg_color);
-                }
-
-                let rect = response.rect;
-                let text_color = if is_selected { Color32::WHITE } else { Color32::BLACK };
-                
-                // 简化 key 显示
-                let display_key = if record.key.len() > 50 {
-                    format!("{}...", &record.key[..47])
-                } else {
-                    record.key.clone()
-                };
-                
-                ui.painter().text(
-                    rect.left_center() + Vec2::new(12.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    format!("{}: {}", display_key, preview),
-                    egui::FontId::proportional(13.0),
-                    text_color,
-                );
-
-                if response.clicked() {
-                    if is_selected {
-                        self.selected_archive.retain(|&x| x != idx);
-                    } else {
-                        self.selected_archive.push(idx);
-                    }
-                }
-            }
-        });
-    }
 }
 
 fn find_opencode_db() -> Option<PathBuf> {
@@ -754,16 +526,6 @@ fn find_opencode_db() -> Option<PathBuf> {
     }
     let home = dirs::home_dir()?;
     let db_path = home.join(".local").join("share").join("opencode").join("opencode.db");
-    if db_path.exists() {
-        Some(db_path)
-    } else {
-        None
-    }
-}
-
-fn find_archive_db() -> Option<PathBuf> {
-    let app_data = dirs::config_dir().or_else(dirs::data_dir)?;
-    let db_path = app_data.join("ai.opencode.desktop").join("drafts.sqlite");
     if db_path.exists() {
         Some(db_path)
     } else {

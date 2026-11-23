@@ -11,4 +11,3 @@ egui = "0.28"
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = "0.4"
 dirs = "5.0"
-serde_json = "1.0"

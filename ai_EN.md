@@ -13,12 +13,12 @@
 
 ### Precautions
 
-1. The Python data layer is `py/opencode_core.py` and is GUI-independent. Change data logic there and keep `py/tests/test_core.py` green.
-2. v2 current sessions live in `session_v2`, messages in `session_message` / `session_part`; v1 history stays in `session` / `message` / `part`. Show both generations.
-3. Always delete through `core.delete_sessions()` / `core.delete_archived()` — they enable foreign-key cascades. Do not hand-write `DELETE FROM session`.
+1. **This repository supports OpenCode v2 only**: `session_v2`, `session_message`, `session_part`. Do not reintroduce `session` / `message` / `document` compatibility paths.
+2. The Python data layer is `py/opencode_core.py` and is GUI-independent. Change data logic there and keep `py/tests/test_core.py` green.
+3. Always delete through `core.delete_sessions()` / `core.delete_archived()` — they enable foreign-key cascades.
 4. Import writes to the real database. Use temporary fixtures for tests, never `~/.local/share/opencode/opencode.db`.
-5. `VACUUM` can fail while OpenCode holds a write lock; that is expected.
-6. The Rust GUI reads/deletes both v2 and v1 tables, but does not yet support export/import.
+5. A database without `session_v2` is rejected by design.
+6. `VACUUM` can fail while OpenCode holds a write lock; that is expected.
 
 ## 2. History
 
@@ -29,16 +29,17 @@
 ### 2026-09-01 to 09-02
 
 - Switched to `session` in `opencode.db`; added filters and JSON archive.
-- Added a Rust/egui GUI and removed the TUI (stale TUI docs were cleaned up in v2.0).
+- Added a Rust/egui GUI and removed the TUI.
 
 ### 2026-11-23 — v2.0.0
 
-- Verified local opencode **v2.3.0**: current sessions go to `session_v2`, messages to `session_message` / `session_part`; the legacy `session` table still holds 56 historical rows versus 49 in `session_v2`. The old tool only read `session`, so v2 sessions were invisible.
-- Added `py/opencode_core.py`: schema detection, merged v1+v2 listing, filtering, cascading deletes, full JSON export/import (including messages and parts), legacy `document` archive management.
-- Rewrote `py/opencode_session_manager.py` to use the core layer, with search, status/time filters, detail pane, v1/v2 badges, bilingual UI and `OPENCODE_SESSION_MANAGER_DB` support.
-- Added `tests/test_core.py`: 8 headless unit tests, all passing.
-- Rust GUI also reads both tables and deletes from the correct table; Cargo version set to 2.0.0.
-- README consolidated into one bilingual file; `README_EN.md` kept as an entry point; added `CHANGELOG.md` and `.gitignore`.
+- Verified local opencode **v2.3.0**: current sessions are written to `session_v2`, messages to `session_message` / `session_part`.
+- Added `py/opencode_core.py`, rewrote the tkinter GUI, updated the Rust GUI to read both generations, and published v2.0.0.
+
+### 2026-11-23 — v2-only cleanup
+
+- Removed all v1 / legacy paths: `session`, `message`, `part`, `document` queries, the legacy archive window and v1 archive import.
+- Core layer, both GUIs, tests and all documentation are now v2-only.
 
 Current layout:
 
@@ -55,6 +56,6 @@ opencode-session-manager/
 
 ## 3. Why this exists
 
-OpenCode has no built-in session cleanup UI. v2 introduced new tables that made the old tool miss current sessions. This project provides a **cross-schema unified view** with safe deletion and backup, rather than replacing OpenCode's own session features.
+OpenCode v2 moved sessions and messages to new tables. This project provides a safe local UI to inspect, filter, delete and back them up. The current version intentionally does not support older data formats, keeping the code simple and behaviour predictable.
 
-Reuse: the core layer can be imported by other scripts; the unit tests provide minimal v1/v2 schema fixtures for further work.
+Reuse: the core layer can be imported by other scripts; the unit tests provide minimal v2 schema fixtures for further work.

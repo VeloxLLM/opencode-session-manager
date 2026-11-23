@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OpenCode Session Manager - tkinter GUI for v2/v1 session databases."""
+"""OpenCode Session Manager - tkinter GUI for OpenCode v2 databases."""
 
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "export": "导出选中",
         "import": "导入存档",
         "delete_archived": "删除已归档",
-        "archive_manager": "归档管理",
         "select_all": "全选",
         "deselect_all": "取消全选",
         "delete_selected": "删除选中",
@@ -48,7 +47,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "db_info": "数据库信息",
         "ready": "就绪",
         "no_db": "未找到数据库，请手动选择 opencode.db",
-        "no_db_title": "未找到数据库",
+        "not_v2": "当前数据库不包含 session_v2 表，仅支持 OpenCode v2",
         "no_selection": "请先选择会话",
         "confirm_delete": "确认删除",
         "confirm_delete_msg": "确定删除选中的 {} 个会话吗？\n关联消息会一并删除，此操作不可撤销！",
@@ -61,7 +60,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "select_archive": "选择存档文件",
         "confirm_import": "确认导入",
         "confirm_import_msg": "导入存档会写入当前数据库，重复的会话将被覆盖。继续吗？",
-        "import_done": "已导入 {} 个会话、{} 条消息、{} 个片段、{} 条旧记录",
+        "import_done": "已导入 {} 个会话、{} 条消息、{} 个片段",
         "import_failed": "导入失败",
         "invalid_archive": "无效的存档文件格式",
         "vacuum_done": "压缩完成，节省 {}",
@@ -73,11 +72,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "error": "错误",
         "path": "路径",
         "size": "大小",
-        "tables": "数据表",
-        "v2": "v2 会话",
-        "v1": "v1 会话",
+        "session_count": "会话数",
         "archived_count": "已归档",
-        "legacy_records": "旧版记录",
         "title": "标题",
         "id": "ID",
         "schema": "数据表",
@@ -88,9 +84,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "messages": "消息数",
         "tokens": "Token",
         "cost": "费用",
-        "archive_db_missing": "未找到桌面版归档数据库 drafts.sqlite",
-        "archive_records": "归档记录",
-        "archive_hint": "旧版桌面归档数据（document 表）",
     },
     "en": {
         "window_title": "OpenCode Session Manager v2",
@@ -101,7 +94,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "export": "Export",
         "import": "Import",
         "delete_archived": "Delete Archived",
-        "archive_manager": "Archive Manager",
         "select_all": "Select All",
         "deselect_all": "Deselect All",
         "delete_selected": "Delete Selected",
@@ -120,7 +112,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "db_info": "Database",
         "ready": "Ready",
         "no_db": "Database not found. Please select opencode.db manually.",
-        "no_db_title": "Database Not Found",
+        "not_v2": "No session_v2 table found. Only OpenCode v2 is supported.",
         "no_selection": "Please select sessions first",
         "confirm_delete": "Confirm Delete",
         "confirm_delete_msg": "Delete {} selected session(s)?\nMessages will be removed too. This cannot be undone!",
@@ -133,7 +125,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "select_archive": "Select Archive File",
         "confirm_import": "Confirm Import",
         "confirm_import_msg": "Import will write to the current database; duplicate sessions are replaced. Continue?",
-        "import_done": "Imported {} sessions, {} messages, {} parts, {} legacy records",
+        "import_done": "Imported {} sessions, {} messages, {} parts",
         "import_failed": "Import failed",
         "invalid_archive": "Invalid archive format",
         "vacuum_done": "Vacuum complete, saved {}",
@@ -145,11 +137,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "error": "Error",
         "path": "Path",
         "size": "Size",
-        "tables": "Tables",
-        "v2": "v2 sessions",
-        "v1": "v1 sessions",
+        "session_count": "Sessions",
         "archived_count": "Archived",
-        "legacy_records": "Legacy records",
         "title": "Title",
         "id": "ID",
         "schema": "Table",
@@ -160,77 +149,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "messages": "Messages",
         "tokens": "Tokens",
         "cost": "Cost",
-        "archive_db_missing": "Desktop archive database drafts.sqlite not found",
-        "archive_records": "Archive records",
-        "archive_hint": "Legacy desktop drafts (document table)",
     },
 }
 
 STATUS_KEYS = ("status_all", "status_active", "status_archived")
 TIME_KEYS = ("time_all", "time_today", "time_7d", "time_30d")
-
-
-class ArchiveManagerWindow:
-    """Window for the legacy drafts.sqlite document table."""
-
-    def __init__(self, parent: tk.Tk, db_path: Path, lang: str):
-        self.db_path = db_path
-        self.lang = lang
-        self.conn = core.connect(db_path)
-        self.window = tk.Toplevel(parent)
-        self.window.geometry("820x520")
-        self.window.minsize(600, 400)
-        self.window.protocol("WM_DELETE_WINDOW", self._close)
-
-        main = ttk.Frame(self.window, padding=10)
-        main.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(main, text=self.t("archive_hint")).pack(anchor=tk.W, pady=(0, 8))
-
-        frame = ttk.LabelFrame(main, text=self.t("archive_records"), padding=5)
-        frame.pack(fill=tk.BOTH, expand=True)
-        self.tree = ttk.Treeview(frame, show="tree", selectmode="extended")
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        buttons = ttk.Frame(main)
-        buttons.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(buttons, text=self.t("refresh"), command=self._reload).pack(side=tk.LEFT)
-        ttk.Button(buttons, text=self.t("select_all"), command=self._select_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(buttons, text=self.t("deselect_all"), command=self._deselect_all).pack(side=tk.LEFT)
-        ttk.Button(buttons, text=self.t("delete_selected"), command=self._delete).pack(side=tk.RIGHT)
-        self._reload()
-
-    def t(self, key: str, *args) -> str:
-        text = TRANSLATIONS[self.lang].get(key, key)
-        return text.format(*args) if args else text
-
-    def _reload(self) -> None:
-        self.tree.delete(*self.tree.get_children())
-        for key, value in core.list_legacy_records(self.conn):
-            preview = core.extract_preview(value) or "(empty)"
-            self.tree.insert("", tk.END, text=f"{preview[:60]}", values=(key,))
-
-    def _select_all(self) -> None:
-        self.tree.selection_add(*self.tree.get_children())
-
-    def _deselect_all(self) -> None:
-        self.tree.selection_remove(*self.tree.selection())
-
-    def _delete(self) -> None:
-        keys = [self.tree.item(item, "values")[0] for item in self.tree.selection()]
-        if not keys:
-            messagebox.showwarning(self.t("confirm_delete"), self.t("no_selection"))
-            return
-        if not messagebox.askyesno(self.t("confirm_delete"), self.t("confirm_delete_msg", len(keys))):
-            return
-        core.delete_legacy_records(self.conn, keys)
-        self._reload()
-
-    def _close(self) -> None:
-        self.conn.close()
-        self.window.destroy()
 
 
 class OpenCodeSessionManager:
@@ -265,7 +188,6 @@ class OpenCodeSessionManager:
             ("btn_export", "export", "_export"),
             ("btn_import", "import", "_import"),
             ("btn_archived", "delete_archived", "_delete_archived"),
-            ("btn_archive_manager", "archive_manager", "_open_archive_manager"),
         ]
         for name, label, command in specs:
             self.widgets[name] = ttk.Button(toolbar, text=self.t(label), command=getattr(self, command))
@@ -286,24 +208,30 @@ class OpenCodeSessionManager:
         filters.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(filters, text=self.t("search")).pack(side=tk.LEFT)
         self.search_var = tk.StringVar()
-        entry = ttk.Entry(filters, textvariable=self.search_var, width=28)
-        entry.pack(side=tk.LEFT, padx=(4, 10))
-        entry.bind("<Return>", lambda _: self._load_tree())
+        search_entry = ttk.Entry(filters, textvariable=self.search_var, width=28)
+        search_entry.pack(side=tk.LEFT, padx=(4, 10))
+        search_entry.bind("<Return>", lambda _: self._load_tree())
 
         ttk.Label(filters, text=self.t("status")).pack(side=tk.LEFT)
         self.status_filter_var = tk.StringVar(value=self.t(STATUS_KEYS[0]))
-        status_values = [self.t(key) for key in STATUS_KEYS]
         self.widgets["status_filter"] = ttk.Combobox(
-            filters, textvariable=self.status_filter_var, values=status_values, state="readonly", width=10
+            filters,
+            textvariable=self.status_filter_var,
+            values=[self.t(key) for key in STATUS_KEYS],
+            state="readonly",
+            width=10,
         )
         self.widgets["status_filter"].pack(side=tk.LEFT, padx=(4, 10))
         self.widgets["status_filter"].bind("<<ComboboxSelected>>", lambda _: self._load_tree())
 
         ttk.Label(filters, text=self.t("time")).pack(side=tk.LEFT)
         self.time_filter_var = tk.StringVar(value=self.t(TIME_KEYS[0]))
-        time_values = [self.t(key) for key in TIME_KEYS]
         self.widgets["time_filter"] = ttk.Combobox(
-            filters, textvariable=self.time_filter_var, values=time_values, state="readonly", width=10
+            filters,
+            textvariable=self.time_filter_var,
+            values=[self.t(key) for key in TIME_KEYS],
+            state="readonly",
+            width=10,
         )
         self.widgets["time_filter"].pack(side=tk.LEFT, padx=4)
         self.widgets["time_filter"].bind("<<ComboboxSelected>>", lambda _: self._load_tree())
@@ -355,9 +283,8 @@ class OpenCodeSessionManager:
         labels = {
             "btn_lang": "language", "btn_refresh": "refresh", "btn_select_db": "select_db",
             "btn_vacuum": "vacuum", "btn_export": "export", "btn_import": "import",
-            "btn_archived": "delete_archived", "btn_archive_manager": "archive_manager",
-            "btn_select_all": "select_all", "btn_deselect_all": "deselect_all",
-            "btn_delete": "delete_selected",
+            "btn_archived": "delete_archived", "btn_select_all": "select_all",
+            "btn_deselect_all": "deselect_all", "btn_delete": "delete_selected",
         }
         for name, key in labels.items():
             self.widgets[name].configure(text=self.t(key))
@@ -373,14 +300,11 @@ class OpenCodeSessionManager:
             self.db_info_var.set(self._format_summary(summary))
 
     def _format_summary(self, summary: dict) -> str:
-        counts = summary["counts"]
         return (
             f"{self.t('path')}: {summary['path']}\n"
             f"{self.t('size')}: {core.format_size(summary['size_bytes'])}  |  "
-            f"{self.t('v2')}: {counts.get(core.V2_TABLE, 0)}  |  "
-            f"{self.t('v1')}: {counts.get(core.V1_TABLE, 0)}  |  "
-            f"{self.t('archived_count')}: {summary['archived']}  |  "
-            f"{self.t('legacy_records')}: {counts.get(core.LEGACY_TABLE, 0)}"
+            f"{self.t('session_count')}: {summary['sessions']}  |  "
+            f"{self.t('archived_count')}: {summary['archived']}"
         )
 
     def _select_database(self) -> None:
@@ -396,11 +320,19 @@ class OpenCodeSessionManager:
         if not self.db_path or not self.db_path.is_file():
             self.status_var.set(self.t("no_db"))
             self.db_info_var.set(self.t("no_db"))
+            self.sessions = []
+            self.tree.delete(*self.tree.get_children())
             return
         try:
             if self.conn:
                 self.conn.close()
             self.conn = core.connect(self.db_path)
+            if not core.is_v2_database(self.conn):
+                self.sessions = []
+                self.tree.delete(*self.tree.get_children())
+                self.db_info_var.set(self.t("not_v2"))
+                self.status_var.set(self.t("not_v2"))
+                return
             summary = core.get_database_summary(self.conn, self.db_path)
             self.db_info_var.set(self._format_summary(summary))
             self._load_tree()
@@ -414,6 +346,7 @@ class OpenCodeSessionManager:
         self.sessions = []
         if not self.conn:
             return
+
         status_label = self.status_filter_var.get()
         time_label = self.time_filter_var.get()
         status_key = STATUS_KEYS[status_label] if status_label in [self.t(k) for k in STATUS_KEYS] else "status_all"
@@ -441,10 +374,14 @@ class OpenCodeSessionManager:
             group_node = self.tree.insert("", tk.END, text=f"{short} ({len(items)}) [{stamp}]", open=False)
             for item in items:
                 updated = datetime.fromtimestamp(item.time_updated / 1000).strftime("%m/%d %H:%M")
-                badge = "v2" if item.ref.table == core.V2_TABLE else "v1"
                 flag = " [A]" if item.is_archived else ""
-                label = f"[{badge}][{updated}] {item.title[:44]}{flag}"
-                self.tree.insert(group_node, tk.END, text=label, values=(item.ref.key, json.dumps(item.as_dict(), ensure_ascii=False)))
+                label = f"[{updated}] {item.title[:44]}{flag}"
+                self.tree.insert(
+                    group_node,
+                    tk.END,
+                    text=label,
+                    values=(item.ref.key, json.dumps(item.as_dict(), ensure_ascii=False)),
+                )
         self.status_var.set(self.t("loaded", len(self.sessions)))
 
     def _on_select(self, _event=None) -> None:
@@ -464,7 +401,9 @@ class OpenCodeSessionManager:
         for key, label in (("time_created", "created"), ("time_updated", "updated")):
             value = data.get(key) or 0
             try:
-                lines.append(f"{self.t(label)}: {datetime.fromtimestamp(value / 1000).strftime('%Y-%m-%d %H:%M:%S')}")
+                lines.append(
+                    f"{self.t(label)}: {datetime.fromtimestamp(value / 1000).strftime('%Y-%m-%d %H:%M:%S')}"
+                )
             except (ValueError, OSError, OverflowError):
                 pass
         self.detail_text.configure(state=tk.NORMAL)
@@ -485,7 +424,7 @@ class OpenCodeSessionManager:
         return refs
 
     def _select_all(self) -> None:
-        self.tree.selection_add(*[leaf for leaf in self._leaves()])
+        self.tree.selection_add(*list(self._leaves()))
 
     def _deselect_all(self) -> None:
         self.tree.selection_remove(*self.tree.selection())
@@ -529,7 +468,8 @@ class OpenCodeSessionManager:
             messagebox.showwarning(self.t("export"), self.t("no_selection"))
             return
         path = filedialog.asksaveasfilename(
-            title=self.t("save_archive"), defaultextension=".json",
+            title=self.t("save_archive"),
+            defaultextension=".json",
             filetypes=[("JSON", "*.json")],
             initialfile=f"opencode_sessions_{datetime.now():%Y%m%d_%H%M%S}.json",
         )
@@ -551,8 +491,6 @@ class OpenCodeSessionManager:
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            if not isinstance(payload, dict):
-                raise ValueError(self.t("invalid_archive"))
         except Exception as exc:
             messagebox.showerror(self.t("import_failed"), str(exc))
             return
@@ -561,7 +499,7 @@ class OpenCodeSessionManager:
         try:
             result = core.import_archive(self.conn, payload)
             self.status_var.set(
-                self.t("import_done", result["sessions"], result["messages"], result["parts"], result["records"])
+                self.t("import_done", result["sessions"], result["messages"], result["parts"])
             )
             self._load_data()
         except Exception as exc:
@@ -578,13 +516,6 @@ class OpenCodeSessionManager:
             self._load_data()
         except Exception as exc:
             messagebox.showerror(self.t("vacuum_failed"), str(exc))
-
-    def _open_archive_manager(self) -> None:
-        path = core.find_archive_database()
-        if not path:
-            messagebox.showwarning(self.t("archive_manager"), self.t("archive_db_missing"))
-            return
-        ArchiveManagerWindow(self.root, path, self.lang)
 
     def run(self) -> None:
         self.root.mainloop()
